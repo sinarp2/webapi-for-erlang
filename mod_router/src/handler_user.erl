@@ -32,8 +32,6 @@ users(Model) ->
 
     Chs = io_lib:format("{\"size\":~B, \"from\":~B}", [Size, From]),
     Query = lists:flatten(Chs),
-
-    logger:debug("Query:~p~n", [Query]),
     case es:request("/users/_search", Query) of
 	{ok, Resp} ->
 	    %% es에서는 json 문자열로 리턴됨 "{\"took\":1,\"timed_out\":false

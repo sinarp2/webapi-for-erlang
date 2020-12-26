@@ -3,15 +3,16 @@
 
 -export([start_link/0,
 	 init/1,
-	 handle_call/3]).
+	 handle_call/3,
+handle_cast/2]).
 
 -export([get_handler/3]).
 
--record(state, {prefix,
-		routes,
-		authentication}).
+-record(state, {routes,
+		authinfo}).
 
 -record(route, {pattern,
+		auth,
 		path,
 		method,
 		module,
@@ -32,10 +33,10 @@ get_handler(Path, Method, _Heads) ->
     %% get, post 등 atom형대로 정의 되었음.
     case find_handler(atom_to_list(Method) ++ ":" ++ Path,
 		      RouteData#state.routes) of
-	not_found ->
-	    not_found;
+	undefined ->
+	    undefined;
 	Handler ->
-	    [Handler, RouteData#state.authentication]
+	    [Handler, RouteData#state.authinfo]
     end.
 
 start_link() ->
@@ -53,54 +54,70 @@ init([]) ->
     Prefix = ?prop(prefix, InfoList),
     Routes = ?prop(routes, InfoList),
     Auth = ?prop(authentication, InfoList),
-    RouteIndex = build_index(Prefix, Routes, [], []),
-    %%logger:debug("RouteIndex: ~p~n", [RouteIndex]),
-    {ok, #state{prefix=Prefix,
-		routes=RouteIndex,
-		authentication=Auth}}.
+    Catalog = build_catalog(Routes, [Prefix], []),
+    logger:debug("RouteCatalog: ~p~n", [Catalog]),
+    {ok, #state{routes=Catalog, authinfo=Auth}}.
 
 handle_call(get_routes, _From, RouteData) ->
     {reply, RouteData, RouteData}.
+
+handle_cast(_Request, State) ->
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% @doc RESTful URI Path로 Handler 검색을 위한 RegEx 생성
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-build_index(_, [], _, Acc) ->
-    Acc;
-build_index(C, [H|T], E, Acc) ->
-    build_index(C, T, E, build_index(C, H, E, Acc));
-build_index(C, {X, Y}, E, Acc) ->
-    build_index(C, Y, [X|E], Acc);
-build_index(C, {M, H, D}, E, Acc) ->
-    R = #route{path=lists:nth(1, E), method=M,
-	       module=lists:nth(2, E), handler=H, description=D},
-    Str = "^" ++ atom_to_list(M) ++ ":" ++ C ++
-	re:replace(R#route.path,
-		   "{([a-z_]+)}", "(?<\\g{1}>[^/,? ]+)",
+%% first depth : handler, auth, [path]
+build_catalog([{Mod,Ath,Pths}|T], E, Acc)
+  when is_list(Ath) ->
+    build_catalog(T, E, build_catalog(Pths, [Ath|[Mod|E]], Acc));
+%% second depth : path, [method]
+build_catalog([{Pth,Mtds}|T], E, Acc) ->
+    build_catalog(T, E, build_catalog(Mtds, [Pth|E], Acc));
+%% third depth : [method, fun, description]
+build_catalog([{Mtd,Fun,Dsc}|T], [Pth,Ath,Mod,Pfx]=E, Acc)
+  when is_atom(Fun) ->
+    {ok, Prn} = uri_pattern(Mtd, Pfx, Pth),
+    Route = #route{pattern=Prn,
+		   auth=Ath,
+		   path=Pth,
+		   method=Mtd,
+		   module=Mod,
+		   handler=Fun,
+		   description=Dsc},
+    build_catalog(T, E, [Route|Acc]);
+build_catalog([], _, Acc) ->
+    Acc.
+
+uri_pattern(Method, Prefix, UriPath) ->
+    Str = "^" ++ atom_to_list(Method) ++ ":" ++ Prefix ++
+	re:replace(UriPath, "{([a-z_]+)}",
+		   "(?<\\g{1}>[^/,? ]+)",
 		   [global, {return, list}]) ++ "$",
-    {ok, Pt} = re:compile(Str),
-    [R#route{pattern=Pt}|Acc].
+    logger:debug("pattern:~p~n", [Str]),
+    re:compile(Str).
 
 %%--------------------------------------------------------------------
 %% @doc URI Path로 라우팅할 Handler를 검색한다.
-%% @spec (Sbj, RegExPatterns) -> Handler | not_found.
+%% @spec (Sbj, RegExPatterns) -> Handler | undefined.
 %% Sbj = string()
 %% RegExPatterns = List
 %% @end
 %%--------------------------------------------------------------------
 find_handler(_, []) ->
-    not_found;
+    undefined;
 find_handler(Sbj, [R=#route{pattern=Pt}|T]) ->
+    logger:debug("subject:~p~n", [Sbj]),
     case re:run(Sbj, Pt, [{capture, all_names, binary}]) of
-	nomatch ->
-	    find_handler(Sbj, T);
-	match ->
-	    {R#route.module, R#route.handler, []};
 	{match, L} ->
 	    {namelist, N} = re:inspect(Pt, namelist),
 	    NameMap = [{binary_to_list(Name), binary_to_list(Value)}
 		       || {Name, Value} <- lists:zip(N, L)],
-	    {R#route.module, R#route.handler, NameMap}
+	    {R#route.module, R#route.handler, NameMap};
+	match ->
+	    {R#route.module, R#route.handler, []};
+	nomatch ->
+	    find_handler(Sbj, T)
     end.

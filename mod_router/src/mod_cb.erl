@@ -61,8 +61,8 @@ route_to_handler(Path, Method, Header, Params) ->
 	%% auth check not implemented
 	[_, {unauthorized, _Reason}] ->
 	    {401, {[{fail, <<"unauthorized">>}]}};
-	not_found ->
-	    {404, {[{fail, <<"page not found">>}]}};
+	undefined ->
+	    {404, {[{fail, <<"undefined api">>}]}};
 	[Handler, AuthInfo] ->
 	    %% {handler_module, func, [uri parameter]}
 	    %% ex: {handler_user,user,[{"user_id","FwfNrXMBVPiqh5flaLV1"}]}
@@ -95,32 +95,22 @@ check_auth({Type, Data}) ->
 process_logic({Mod, Fun, PathParams}, Header, Params, AuthData) ->
     logger:debug("Processing request : ~p ~p ~p ~p~n",
 		 [Mod, Fun, Header, Params ++ PathParams]),
-    {ok, ThePid} = router_model:start([Params ++ PathParams,
-				       Header, AuthData]),
-    %% FunAtom : param, header, authinfo, store
-    ModelProxy =
-	fun(FunAtom, Name) ->
-		logger:debug("Request Model Pid : ~p~n", [ThePid]),
-		case apply(router_model, FunAtom, [ThePid, Name]) of
-		    {fail, Reason} ->
-			error(Reason);
-		    Value ->
-			Value
-		end
-	end,
-    logger:debug("All Headers : ~p~n", [ModelProxy(header, all)]),
+
+    ModelProxy = router_model:start([Params ++ PathParams,
+				     Header, AuthData]),
+    logger:debug("All Headers : ~p~n", [ModelProxy(header, [])]),
     logger:debug("Header : ~p~n", [ModelProxy(header, "myheader")]),
     try
 	Model = apply(Mod, Fun, [ModelProxy]),
-	logger:debug("model get:~p~n", [Model(get, all)]),
-	{200, Model(get, all)}
+	logger:debug("model get:~p~n", [Model(get, [])]),
+	{200, Model(get, [])}
     catch
 	error:Err:Stacktrace ->
 	    logger:error("handler error:~p~n", [Err]),
 	    logger:error("handler stack:~p~n", [Stacktrace]),
 	    {500, {[{<<"fail">>, <<"Handler Failure">>}]}}
     after
-	router_model:stop(ThePid)
+	ModelProxy(stop, [])
     end.
 
 %%--------------------------------------------------------------------
