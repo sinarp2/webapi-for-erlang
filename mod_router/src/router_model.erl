@@ -31,8 +31,17 @@ authinfo(Pid, []) ->
 authinfo(Pid, Name) ->
     gen_server:call(Pid, {authinfo, Name}).
 
+put(_Pid, Args) when not is_tuple(Args) ->
+    erlang:error("Model put value must be a tuple");
 put(Pid, {Name, Value}) ->
-    gen_server:call(Pid, {put, {Name, Value}}).
+    NewValue =
+	case io_lib:char_list(Value) of
+	    true ->
+		unicode:characters_to_binary(Value);
+	    false ->
+		Value
+	end,
+    gen_server:call(Pid, {put, {Name, NewValue}}).
 
 get(Pid, []) ->
     gen_server:call(Pid, get);
@@ -80,6 +89,7 @@ handle_call({get, Name}, _, State) ->
     {reply, Value, State};
 handle_call({put, NewData}, _, State) ->
     {List} = State#state.data,
+    logger:debug("put:~p~n", [NewData]),
     NewList = List ++ [NewData],
     {reply, NewData, State#state{data={NewList}}};
 handle_call(_, _, State) ->

@@ -25,7 +25,7 @@ request(Url, Query) ->
 		      [], []),
     if Ok =:= ok ->
 	    {_Status, _Header, Body} = Response,
-	    logger:debug("es response:~p~n", [Body]),
+	    %%logger:debug("es response:~p~n", [Body]),
 	    {ok, Body};
        true ->
 	    logger:debug("es error=>"),

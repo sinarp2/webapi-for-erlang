@@ -4,7 +4,7 @@
 -export([start_link/0,
 	 init/1,
 	 handle_call/3,
-handle_cast/2]).
+	 handle_cast/2]).
 
 -export([get_handler/3]).
 
@@ -28,15 +28,15 @@ handle_cast/2]).
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
 get_handler(Path, Method, _Heads) ->
-    RouteData = gen_server:call(?MODULE, get_routes),
+    State = gen_server:call(?MODULE, get_routes),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
     case find_handler(atom_to_list(Method) ++ ":" ++ Path,
-		      RouteData#state.routes) of
+		      State#state.routes) of
 	undefined ->
 	    undefined;
 	Handler ->
-	    [Handler, RouteData#state.authinfo]
+	    [Handler, State#state.authinfo]
     end.
 
 start_link() ->
@@ -48,14 +48,13 @@ start_link() ->
 %%-----------------------------------------
 init([]) ->
     {ok, Path} = application:get_env(routes),
-    logger:debug("Routes path : ~p~n", [Path]),
     {ok, [InfoList]} = file:consult(Path),
     %%logger:debug("Route Info: ~p~n", [InfoList]),
     Prefix = ?prop(prefix, InfoList),
     Routes = ?prop(routes, InfoList),
     Auth = ?prop(authentication, InfoList),
     Catalog = build_catalog(Routes, [Prefix], []),
-    logger:debug("RouteCatalog: ~p~n", [Catalog]),
+    %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
     {ok, #state{routes=Catalog, authinfo=Auth}}.
 
 handle_call(get_routes, _From, RouteData) ->
@@ -96,7 +95,6 @@ uri_pattern(Method, Prefix, UriPath) ->
 	re:replace(UriPath, "{([a-z_]+)}",
 		   "(?<\\g{1}>[^/,? ]+)",
 		   [global, {return, list}]) ++ "$",
-    logger:debug("pattern:~p~n", [Str]),
     re:compile(Str).
 
 %%--------------------------------------------------------------------
@@ -109,15 +107,16 @@ uri_pattern(Method, Prefix, UriPath) ->
 find_handler(_, []) ->
     undefined;
 find_handler(Sbj, [R=#route{pattern=Pt}|T]) ->
-    logger:debug("subject:~p~n", [Sbj]),
     case re:run(Sbj, Pt, [{capture, all_names, binary}]) of
 	{match, L} ->
 	    {namelist, N} = re:inspect(Pt, namelist),
+	    %% Path Parameter : /path/to/user/{user_id}
+	    %% user_id=Value
 	    NameMap = [{binary_to_list(Name), binary_to_list(Value)}
 		       || {Name, Value} <- lists:zip(N, L)],
-	    {R#route.module, R#route.handler, NameMap};
+	    {R#route.auth, R#route.module, R#route.handler, NameMap};
 	match ->
-	    {R#route.module, R#route.handler, []};
+	    {R#route.auth, R#route.module, R#route.handler, []};
 	nomatch ->
 	    find_handler(Sbj, T)
     end.

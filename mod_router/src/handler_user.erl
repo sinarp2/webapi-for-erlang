@@ -49,7 +49,12 @@ users(Model) ->
 	    %% 데이터 형식은 상황에 따라 달라지므로
 	    %% elasticsearch 사용 json 문자열을 대상으로한
 	    %% 예만 제시.
-	    logger:debug("resp:~p~n", [Resp]),
+	    Sample = "io_list로 리턴해야되기 때문에 binary로 변환해야함",
+
+	    Model(put, {sample1, unicode:characters_to_binary(Sample)}),
+	    Model(put, {sample2, Sample}),
+	    %%Model(put, Sample),
+	    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
 	    Model(put, {result, jiffy:decode(Resp)});
 	{error, Resp} ->
 	    Model(put, {result, Resp})

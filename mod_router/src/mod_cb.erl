@@ -63,14 +63,14 @@ route_to_handler(Path, Method, Header, Params) ->
 	    {401, {[{fail, <<"unauthorized">>}]}};
 	undefined ->
 	    {404, {[{fail, <<"undefined api">>}]}};
-	[Handler, AuthInfo] ->
+	[{Ath, Mod, Fun, PathParams}, AuthInfo] ->
 	    %% {handler_module, func, [uri parameter]}
 	    %% ex: {handler_user,user,[{"user_id","FwfNrXMBVPiqh5flaLV1"}]}
 	    %% authentication 정보 추가 되어야 함.
-	    logger:debug("Handler: ~p~n", [Handler]),
-	    case check_auth(AuthInfo) of
+	    case check_auth(Ath, AuthInfo) of
 		{ok, AuthData} ->
-		    process_logic(Handler, Header, Params, AuthData);
+		    process_logic(Mod, Fun, Header,
+				  PathParams ++ Params, AuthData);
 		Failed ->
 		    logger:debug("Authentication failed for : ~p~n", [Failed]),
 		    {401, {[{fail, <<"unauthorized.">>}]}}
@@ -82,9 +82,14 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-check_auth({Type, Data}) ->
-    logger:debug("Authentication Type is : ~p~n", [Type]),
-    logger:debug("Authentication Data is : ~p~n", [Data]),
+check_auth([], _) ->
+    {ok, []};
+check_auth([guest], _) ->
+    {ok, []};
+check_auth(Ath, {Type, Data}) ->
+    logger:debug("API auth mod : ~p~n", [Ath]),
+    logger:debug("Authentication Type : ~p~n", [Type]),
+    logger:debug("Authentication Data : ~p~n", [Data]),
     {ok, []}.
 
 %%--------------------------------------------------------------------
@@ -92,17 +97,13 @@ check_auth({Type, Data}) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-process_logic({Mod, Fun, PathParams}, Header, Params, AuthData) ->
+process_logic(Mod, Fun, Header, Params, AuthData) ->
     logger:debug("Processing request : ~p ~p ~p ~p~n",
-		 [Mod, Fun, Header, Params ++ PathParams]),
+		 [Mod, Fun, Header, Params]),
 
-    ModelProxy = router_model:start([Params ++ PathParams,
-				     Header, AuthData]),
-    logger:debug("All Headers : ~p~n", [ModelProxy(header, [])]),
-    logger:debug("Header : ~p~n", [ModelProxy(header, "myheader")]),
+    ModelProxy = router_model:start([Params, Header, AuthData]),
     try
 	Model = apply(Mod, Fun, [ModelProxy]),
-	logger:debug("model get:~p~n", [Model(get, [])]),
 	{200, Model(get, [])}
     catch
 	error:Err:Stacktrace ->
