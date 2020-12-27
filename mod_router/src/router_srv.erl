@@ -24,19 +24,23 @@
 %%-----------------------------------------
 %% RESTful Uri Path로 Handler를 검색
 %% Path -> GET:/some/path/for/{id} 의 형태
-%% Method -> get, post, put, delete의 atom
+%% Method -> "GET", "POST", "PUT", "DELETE"의 문자열
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
-get_handler(Path, Method, _Heads) ->
-    State = gen_server:call(?MODULE, get_routes),
+get_handler(Path, Method, Headers) ->
+    #state{routes=Routes, authinfo=AuthInfo} = gen_server:call(?MODULE, routes),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
-    case find_handler(atom_to_list(Method) ++ ":" ++ Path,
-		      State#state.routes) of
+    case find_handler(string:lowercase(Method) ++ ":" ++ Path, Routes) of
 	undefined ->
 	    undefined;
-	Handler ->
-	    [Handler, State#state.authinfo]
+	{Ath, Mod, Fun, PathParams} ->
+	    case check_auth(Ath, Headers, AuthInfo) of
+		unautherized ->
+		    unautherized;
+		AuthData ->
+		    {Mod, Fun, PathParams, AuthData}
+	    end
     end.
 
 start_link() ->
@@ -57,7 +61,7 @@ init([]) ->
     %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
     {ok, #state{routes=Catalog, authinfo=Auth}}.
 
-handle_call(get_routes, _From, RouteData) ->
+handle_call(routes, _From, RouteData) ->
     {reply, RouteData, RouteData}.
 
 handle_cast(_Request, State) ->
@@ -120,3 +124,24 @@ find_handler(Sbj, [R=#route{pattern=Pt}|T]) ->
 	nomatch ->
 	    find_handler(Sbj, T)
     end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+check_auth([], _, _) ->
+    [{auth_type, guest}];
+check_auth([guest], _, _) ->
+    [{auth_type, guest}];
+check_auth(Ath, Headers, {Type, Data}) ->
+    logger:debug("API auth mod : ~p~n", [Ath]),
+    logger:debug("Auth mod contains require_auth:~p~n",
+		 [lists:member(require_auth, Ath)]),
+    logger:debug("Auth mod contains is_admin:~p~n",
+		 [lists:member(is_admin, Ath)]),
+    logger:debug("Authentication Type : ~p~n", [Type]),
+    logger:debug("Authentication Data : ~p~n", [Data]),
+    logger:debug("Header for Auth:~p~n", [?prop("authorization", Headers)]),
+    %% AuthData = [{"token", ""}, {"username", ""}, {"email", ""}],
+    unauthorized.

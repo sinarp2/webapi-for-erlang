@@ -14,7 +14,8 @@ do(Mod) ->
     logger:debug("callback called : ~p~n", [self()]),
     case ?prop("content-type", Mod#mod.parsed_header) of
 	"multipart/form-data" ->
-	    response({400, {[{fail, <<"multipart/form-data not implemented.">>}]}});
+	    response({400, 
+{[{fail, <<"multipart/form-data not implemented.">>}]}});
 	"application/json" ->
 	    UriMap = uri_string:parse(Mod#mod.request_uri),
 	    Method = Mod#mod.method,
@@ -56,25 +57,15 @@ parse_param(_Method, _UriMap, Body) ->
 %% @end
 %%--------------------------------------------------------------------
 route_to_handler(Path, Method, Header, Params) ->
-    MethodAtom = list_to_atom(string:lowercase(Method)),
-    case router_srv:get_handler(Path, MethodAtom, Header) of
+    case router_srv:get_handler(Path, Method, Header) of
 	%% auth check not implemented
-	[_, {unauthorized, _Reason}] ->
+	unauthorized ->
 	    {401, {[{fail, <<"unauthorized">>}]}};
 	undefined ->
-	    {404, {[{fail, <<"undefined api">>}]}};
-	[{Ath, Mod, Fun, PathParams}, AuthInfo] ->
-	    %% {handler_module, func, [uri parameter]}
-	    %% ex: {handler_user,user,[{"user_id","FwfNrXMBVPiqh5flaLV1"}]}
-	    %% authentication 정보 추가 되어야 함.
-	    case check_auth(Ath, AuthInfo) of
-		{ok, AuthData} ->
-		    process_logic(Mod, Fun, Header,
-				  PathParams ++ Params, AuthData);
-		Failed ->
-		    logger:debug("Authentication failed for : ~p~n", [Failed]),
-		    {401, {[{fail, <<"unauthorized.">>}]}}
-	    end
+	    {404, {[{fail, <<"handler not found">>}]}};
+	{Mod, Fun, PathParams, AuthData} ->
+	    process_logic(Mod, Fun, Header,
+			  PathParams ++ Params, AuthData)
     end.
 
 %%--------------------------------------------------------------------
@@ -82,25 +73,7 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-check_auth([], _) ->
-    {ok, []};
-check_auth([guest], _) ->
-    {ok, []};
-check_auth(Ath, {Type, Data}) ->
-    logger:debug("API auth mod : ~p~n", [Ath]),
-    logger:debug("Authentication Type : ~p~n", [Type]),
-    logger:debug("Authentication Data : ~p~n", [Data]),
-    {ok, []}.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
 process_logic(Mod, Fun, Header, Params, AuthData) ->
-    logger:debug("Processing request : ~p ~p ~p ~p~n",
-		 [Mod, Fun, Header, Params]),
-
     ModelProxy = router_model:start([Params, Header, AuthData]),
     try
 	Model = apply(Mod, Fun, [ModelProxy]),
