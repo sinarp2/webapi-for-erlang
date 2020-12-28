@@ -5,11 +5,11 @@
 	 handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2]).
 
--export([param/2, header/2, authinfo/2, put/2, get/2]).
+-export([param/2, header/2, userinfo/2, put/2, get/2]).
 
 -include("macros.hrl").
 
--record(state, {params, header, authinfo, data={[]}}).
+-record(state, {params, header, userinfo, session_data={[]}}).
 
 stop(Pid, _Arg) ->
     gen_server:cast(Pid, stop).
@@ -26,10 +26,10 @@ header(Pid, []) ->
 header(Pid, Name) ->
     gen_server:call(Pid, {header, Name}).
 
-authinfo(Pid, []) ->
-    gen_server:call(Pid, authinfo);
-authinfo(Pid, Name) ->
-    gen_server:call(Pid, {authinfo, Name}).
+userinfo(Pid, []) ->
+    gen_server:call(Pid, userinfo);
+userinfo(Pid, Name) ->
+    gen_server:call(Pid, {userinfo, Name}).
 
 put(_Pid, Args) when not is_tuple(Args) ->
     erlang:error("Model put value must be a tuple");
@@ -50,10 +50,9 @@ get(Pid, Name) ->
 
 start(InitArgs) ->
     {ok, Pid} = gen_server:start_link(?MODULE, InitArgs, []),
-    %% FunAtom : param, header, authinfo, store
-    fun(FunAtom, Args) ->
-	    logger:debug("Request Model: ~p ~p~n", [Pid, FunAtom]),
-	    case apply(router_model, FunAtom, [Pid, Args]) of
+    %% Cmd : param, header, userinfo, store
+    fun(Cmd, Args) ->
+	    case apply(?MODULE, Cmd, [Pid, Args]) of
 		{fail, Reason} ->
 		    error(Reason);
 		Value ->
@@ -61,11 +60,11 @@ start(InitArgs) ->
 	    end
     end.
 
-init([Params, Header, AuthData]) ->
+init([Params, Header, UserInfo]) ->
     process_flag(trap_exit, true),
     {ok, #state{params=Params,
 		header=Header,
-		authinfo=AuthData}}.
+		userinfo=UserInfo}}.
 
 handle_call(param, _, State) ->
     {reply, State#state.params, State};
@@ -77,21 +76,20 @@ handle_call(header, _, State) ->
 handle_call({header, Name}, _, State) ->
     Value = ?prop(Name, State#state.header),
     {reply, Value, State};
-handle_call(authinfo, _, State) ->
-    {reply, State#state.authinfo, State};
-handle_call({authinfo, Name}, _, State) ->
-    Value = ?prop(Name, State#state.authinfo),
+handle_call(userinfo, _, State) ->
+    {reply, State#state.userinfo, State};
+handle_call({userinfo, Name}, _, State) ->
+    Value = ?prop(Name, State#state.userinfo),
     {reply, Value, State};
 handle_call(get, _, State) ->
-    {reply, State#state.data, State};
+    {reply, State#state.session_data, State};
 handle_call({get, Name}, _, State) ->
-    Value = ?prop(Name, State#state.data),
+    Value = ?prop(Name, State#state.session_data),
     {reply, Value, State};
 handle_call({put, NewData}, _, State) ->
-    {List} = State#state.data,
-    logger:debug("put:~p~n", [NewData]),
+    {List} = State#state.session_data,
     NewList = List ++ [NewData],
-    {reply, NewData, State#state{data={NewList}}};
+    {reply, NewData, State#state{session_data={NewList}}};
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
@@ -100,9 +98,11 @@ handle_cast(stop, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
-handle_info(_, State) ->
+handle_info(Info, State) ->
+    logger:debug("Info message:~p", [Info]),
     {noreply, State}.
 
-terminate(Reason, _) ->
-    logger:debug("router_model terminates: ~p~n", [Reason]),
+
+terminate(Reason, _State) ->
+    logger:debug("Model Terminates:~p:~p", [Reason, self()]),
     ok.

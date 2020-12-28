@@ -6,7 +6,8 @@
 	 handle_call/3,
 	 handle_cast/2]).
 
--export([get_handler/3]).
+-export([get_handler/3,
+	 get_authinfo/0]).
 
 -record(state, {routes,
 		authinfo}).
@@ -28,7 +29,7 @@
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
 get_handler(Path, Method, Headers) ->
-    #state{routes=Routes, authinfo=AuthInfo} = gen_server:call(?MODULE, routes),
+    {Routes, AuthInfo} = gen_server:call(?MODULE, routes),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
     case find_handler(string:lowercase(Method) ++ ":" ++ Path, Routes) of
@@ -36,12 +37,15 @@ get_handler(Path, Method, Headers) ->
 	    undefined;
 	{Ath, Mod, Fun, PathParams} ->
 	    case check_auth(Ath, Headers, AuthInfo) of
-		unautherized ->
-		    unautherized;
-		AuthData ->
-		    {Mod, Fun, PathParams, AuthData}
+		{unauthorized, Reason} ->
+		    {unauthorized, Reason};
+		UserInfo ->
+		    {Mod, Fun, PathParams, UserInfo}
 	    end
     end.
+
+get_authinfo() ->
+    gen_server:call(?MODULE, authinfo).
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -61,8 +65,10 @@ init([]) ->
     %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
     {ok, #state{routes=Catalog, authinfo=Auth}}.
 
-handle_call(routes, _From, RouteData) ->
-    {reply, RouteData, RouteData}.
+handle_call(routes, _, State) ->
+    {reply, {State#state.routes, State#state.authinfo}, State};
+handle_call(authinfo, _, State) ->
+    {reply, State#state.authinfo, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -134,14 +140,21 @@ check_auth([], _, _) ->
     [{auth_type, guest}];
 check_auth([guest], _, _) ->
     [{auth_type, guest}];
-check_auth(Ath, Headers, {Type, Data}) ->
-    logger:debug("API auth mod : ~p~n", [Ath]),
-    logger:debug("Auth mod contains require_auth:~p~n",
-		 [lists:member(require_auth, Ath)]),
-    logger:debug("Auth mod contains is_admin:~p~n",
-		 [lists:member(is_admin, Ath)]),
-    logger:debug("Authentication Type : ~p~n", [Type]),
-    logger:debug("Authentication Data : ~p~n", [Data]),
-    logger:debug("Header for Auth:~p~n", [?prop("authorization", Headers)]),
-    %% AuthData = [{"token", ""}, {"username", ""}, {"email", ""}],
-    unauthorized.
+check_auth(_Ath, Headers, {_Type, Data}) ->
+    case ?prop("authorization", Headers) of
+	undefined ->
+	    {unauthorized, token_not_found};
+	Value ->
+	    Token = string:lexemes(Value, " "),
+	    jwt_decode(Token, Data)
+    end.
+
+jwt_decode(List, _) when length(List) =/= 2 ->
+    {unauthorized, invalid_header};
+jwt_decode([_,Token], JwtData) ->
+    case jwt:decode(list_to_binary(Token), ?prop(key, JwtData)) of
+	{error, Reason} ->
+	    {unauthorized, Reason};
+	{ok, Info} ->
+	    maps:to_list(Info)
+    end.

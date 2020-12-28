@@ -26,3 +26,5 @@ _checkouts/
 auto-save-list
 tramp
 .\#*
+
+lib/*

@@ -1,7 +1,6 @@
 -module(mod_cb).
 
 -export([do/1]).
--export([]).
 
 -include_lib("inets/include/httpd.hrl").
 -include("macros.hrl").
@@ -14,8 +13,8 @@ do(Mod) ->
     logger:debug("callback called : ~p~n", [self()]),
     case ?prop("content-type", Mod#mod.parsed_header) of
 	"multipart/form-data" ->
-	    response({400, 
-{[{fail, <<"multipart/form-data not implemented.">>}]}});
+	    response({400,
+		      {[{fail, <<"multipart/form-data not implemented.">>}]}});
 	"application/json" ->
 	    UriMap = uri_string:parse(Mod#mod.request_uri),
 	    Method = Mod#mod.method,
@@ -59,13 +58,13 @@ parse_param(_Method, _UriMap, Body) ->
 route_to_handler(Path, Method, Header, Params) ->
     case router_srv:get_handler(Path, Method, Header) of
 	%% auth check not implemented
-	unauthorized ->
-	    {401, {[{fail, <<"unauthorized">>}]}};
+	{unauthorized, Reason} ->
+	    {401, {[{fail, <<"unauthorized">>}, {reason, Reason}]}};
 	undefined ->
 	    {404, {[{fail, <<"handler not found">>}]}};
-	{Mod, Fun, PathParams, AuthData} ->
+	{Mod, Fun, PathParams, UserInfo} ->
 	    process_logic(Mod, Fun, Header,
-			  PathParams ++ Params, AuthData)
+			  PathParams ++ Params, UserInfo)
     end.
 
 %%--------------------------------------------------------------------
@@ -73,10 +72,10 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-process_logic(Mod, Fun, Header, Params, AuthData) ->
-    ModelProxy = router_model:start([Params, Header, AuthData]),
+process_logic(Mod, Fun, Header, Params, UserInfo) ->
+    Model = router_model:start([Params, Header, UserInfo]),
     try
-	Model = apply(Mod, Fun, [ModelProxy]),
+	apply(Mod, Fun, [Model]),
 	{200, Model(get, [])}
     catch
 	error:Err:Stacktrace ->
@@ -84,7 +83,7 @@ process_logic(Mod, Fun, Header, Params, AuthData) ->
 	    logger:error("handler stack:~p~n", [Stacktrace]),
 	    {500, {[{<<"fail">>, <<"Handler Failure">>}]}}
     after
-	ModelProxy(stop, [])
+	Model(stop, [])
     end.
 
 %%--------------------------------------------------------------------
@@ -93,9 +92,21 @@ process_logic(Mod, Fun, Header, Params, AuthData) ->
 %% @end
 %%--------------------------------------------------------------------
 response({Code, Payload}) ->
-    IoList = jiffy:encode(Payload),
-    Hd = [{code, Code},
+    {NewCode, IoList} = try_encode(Code, Payload),
+    Hd = [{code, NewCode},
 	  {content_type, "application/json"},
 	  %%{'Access-Control-Allow-Origin', "*"},
 	  {content_length, integer_to_list(iolist_size(IoList))}],
     {break, [{response, {response, Hd, [IoList]}}]}.
+
+try_encode(Code, Payload) ->
+    try
+	IoList = jiffy:encode(Payload),
+	{Code, IoList}
+    catch
+	Type:Reason:Stack ->
+	    logger:error("encoding error at respose", []),
+	    logger:error("~p:~p", [Type, Reason]),
+	    logger:error("Stack:~p", [Stack]),
+	    {500, <<"{\"result\": \"Internal Server Error\"}">>}
+    end.

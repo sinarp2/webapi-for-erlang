@@ -3,7 +3,7 @@
 ERL=erl
 ROOT=$HOME/Downloads/erlang/webapi
 API_EBIN=$ROOT/mod_router/ebin
-LIB_EBIN=$ROOT/lib/jiffy/ebin
+LIB_EBIN=$ROOT/lib/ebin
 
 PNAME=webapi
 
