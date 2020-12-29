@@ -42,7 +42,7 @@ users(Model) ->
 	    Model(put, {sample2, Sample}),
 	    %%Model(put, Sample),
 	    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
-	    Model(put, {result, jiffy:decode(Resp)});
+	    Model(put, {result, facade:to_json(Resp)});
 	{error, Resp} ->
-	    Model(put, {result, jiffy:decode(Resp)})
+	    Model(put, {result, facade:to_json(Resp)})
     end.

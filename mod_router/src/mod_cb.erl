@@ -45,7 +45,7 @@ parse_param(_Method, _UriMap, Body) ->
 	    0 ->
 		{[]};
 	    _ ->
-		jiffy:decode(Body)
+		json:to_json(Body)
 	end,
     [{binary_to_list(Name), Value} ||
 	{Name, Value} <- BodyList].
@@ -101,7 +101,7 @@ response({Code, Payload}) ->
 
 try_encode(Code, Payload) ->
     try
-	IoList = jiffy:encode(Payload),
+	IoList = facade:stringify(Payload),
 	{Code, IoList}
     catch
 	Type:Reason:Stack ->

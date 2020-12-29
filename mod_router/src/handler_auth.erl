@@ -25,7 +25,7 @@ login(Model) ->
 	    login_check(Model, Resp);
 	{error, Resp} ->
 	    Model(put, {result, error}),
-	    Model(put, {reson, jiffy:encode(Resp)})
+	    Model(put, {reson, facade:to_json(Resp)})
     end.
 
 %% jiffy로 decode 결과는 다음과 같은 erlang 데이터로 표현된다.
@@ -33,7 +33,7 @@ login(Model) ->
 %% object -> {[{}]} -> tuple:proplists
 %% list   -> [[{}]] -> list:proplists
 login_check(Model, Resp) ->
-    {Root} = jiffy:decode(Resp),
+    {Root} = facade:to_json(Resp),
     {Hits} = ?prop(<<"hits">>, Root),
     case ?prop(<<"hits">>, Hits) of
 	[] ->
@@ -53,7 +53,7 @@ login_check(Model, Resp) ->
 	    Expiration = ?prop(expiration, Config),
 	    Claims = [{email, Email},
 		      {username, Username}],
-	    {ok, Token} = jwt:encode(<<"HS256">>, Claims, Expiration, Key),
+	    {ok, Token} = facade:token_encode(Claims),
 	    UpTo = erlang:system_time(second) + Expiration,
 	    {{Y,M,D}, {H,Mi,S}} = calendar:gregorian_seconds_to_datetime(UpTo),
 	    logger:debug("expires at ~p-~p-~p ~2..0B:~2..0B:~2..0B",

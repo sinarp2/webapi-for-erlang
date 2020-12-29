@@ -29,14 +29,14 @@
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
 get_handler(Path, Method, Headers) ->
-    {Routes, AuthInfo} = gen_server:call(?MODULE, routes),
+    {Routes, _} = gen_server:call(?MODULE, routes),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
     case find_handler(string:lowercase(Method) ++ ":" ++ Path, Routes) of
 	undefined ->
 	    undefined;
 	{Ath, Mod, Fun, PathParams} ->
-	    case check_auth(Ath, Headers, AuthInfo) of
+	    case check_auth(Ath, Headers) of
 		{unauthorized, Reason} ->
 		    {unauthorized, Reason};
 		UserInfo ->
@@ -136,25 +136,14 @@ find_handler(Sbj, [R=#route{pattern=Pt}|T]) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-check_auth([], _, _) ->
+check_auth([], _) ->
     [{auth_type, guest}];
-check_auth([guest], _, _) ->
+check_auth([guest], _) ->
     [{auth_type, guest}];
-check_auth(_Ath, Headers, {_Type, Data}) ->
-    case ?prop("authorization", Headers) of
-	undefined ->
-	    {unauthorized, token_not_found};
-	Value ->
-	    Token = string:lexemes(Value, " "),
-	    jwt_decode(Token, Data)
-    end.
-
-jwt_decode(List, _) when length(List) =/= 2 ->
-    {unauthorized, invalid_header};
-jwt_decode([_,Token], JwtData) ->
-    case jwt:decode(list_to_binary(Token), ?prop(key, JwtData)) of
+check_auth(_Ath, Header) ->
+    case facade:token_decode(Header) of
 	{error, Reason} ->
 	    {unauthorized, Reason};
-	{ok, Info} ->
-	    maps:to_list(Info)
+	Value ->
+	    Value
     end.
