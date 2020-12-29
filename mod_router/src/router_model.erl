@@ -15,8 +15,19 @@ stop(Pid, _Arg) ->
     gen_server:cast(Pid, stop).
 
 param(Pid, []) ->
+    %% 전체 파라미터 리턴
     gen_server:call(Pid, param);
+param(Pid, [Name, Default]) ->
+    %% 이름으로 파라미터 리턴
+    %% 없으면 디폴트 값 리턴
+    gen_server:call(Pid, {param, Name, Default});
+param(Pid, [Name, Type, Default]) ->
+    %% 이름으로 파라미터 리턴
+    %% 파라미터 리턴 전 형 변환: int, float
+    %% 없으면 디폴트 값 리턴
+    gen_server:call(Pid, {param, Name, Type, Default});
 param(Pid, Name) ->
+    %% 이름으로 파라미터 리턴
     gen_server:call(Pid, {param, Name}).
 
 %% 헤더 명은 모두 소문자로 저장이 되므로
@@ -71,6 +82,20 @@ handle_call(param, _, State) ->
 handle_call({param, Name}, _, State) ->
     Value = ?prop(Name, State#state.params),
     {reply, Value, State};
+handle_call({param, Name, Default}, _, State) ->
+    case ?prop(Name, State#state.params) of
+	undefined ->
+	    {reply, Default, State};
+	Value ->
+	    {reply, Value, State}
+    end;
+handle_call({param, Name, Type, Default}, _, State) ->
+    case ?prop(Name, State#state.params) of
+	undefined ->
+	    {reply, Default, State};
+	Value ->
+	    {reply, convert(Type, Value), State}
+    end;
 handle_call(header, _, State) ->
     {reply, State#state.header, State};
 handle_call({header, Name}, _, State) ->
@@ -106,3 +131,8 @@ handle_info(Info, State) ->
 terminate(Reason, _State) ->
     logger:debug("Model Terminates:~p:~p", [Reason, self()]),
     ok.
+
+convert(int, Value) ->
+    list_to_integer(Value);
+convert(float, Value) ->
+    list_to_float(Value).
