@@ -9,7 +9,7 @@ all: $(OBJECTS) test
 ebin/%.beam: src/%.erl
 	erlc $(ERLC_FLAGS) -o ebin/ -I include $<
 clean:
-	-rm -f ebin/*
+	-rm -f ebin/*.beam
 
 test:
 	-../apistart.sh start

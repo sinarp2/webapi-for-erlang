@@ -6,7 +6,72 @@
 
 
 signup(Model) ->
-    Model(put, {result, ok}).
+    %% POST
+    %% email, username, password
+    Username = Model(param, "username"),
+    Password = Model(param, "password"),
+    Email = Model(param, "email"),
+
+    if
+	Username == undefined ->
+	    throw(username_not_found);
+	Password == undefined ->
+	    throw(password_not_found);
+	Email == undefined ->
+	    throw(email_not_found);
+	true ->
+	    ok
+    end,
+
+    Query = [{query,
+	      [{term,
+		[{<<"email.keyword">>, Email}]}]}],
+
+    {Ok, Result} =  es:search(<<"users">>, Query),
+
+    if
+	Ok == error ->
+	    throw(Result);
+	true ->
+	    ok
+    end,
+
+    Data = facade:to_ejson(Result),
+    H1 = ?prop(<<"hits">>, Data),
+    H2 = ?prop(<<"hits">>, H1),
+    if
+	length(H2) > 0 ->
+	    throw(duplicated_email);
+	true ->
+	    ok
+    end,
+
+    Hash = crypto:hash(sha256, Password),
+    Doc = [{first_name, Username},
+	   {last_name, <<"">>},
+	   {company_name, <<"">>},
+	   {address, <<"">>},
+	   {city, <<"">>},
+	   {county, <<"">>},
+	   {state, <<"">>},
+	   {zip, <<"">>},
+	   {phone1, <<"">>},
+	   {phone2, <<"">>},
+	   {email, Email},
+	   {web, <<"">>},
+	   {password, Hash}],
+
+    {ok, InsResult} = es:insert(<<"users">>, <<"_doc">>, Doc),
+
+    PropResult = facade:to_ejson(InsResult),
+    Err = proplists:is_defined(<<"error">>, PropResult),
+
+    if
+	Err ->
+	    throw(?prop(<<"error">>, PropResult));
+	true ->
+	    Model(put, {email, Email})
+    end.
 
 logout(Model) ->
     Model(put, {result, ok}).
@@ -16,16 +81,26 @@ login(Model) ->
     %% TODO:
     %% 포스트, 풋 인 경우 사용자가 알아서 바이너리 행태로 조회할 것인가?
     %% 포스트, 풋 인 경우 자동으로 바이너리로 변환해 줄 것인가?
-    logger:debug("userid:~p~n", [Model(param, "userid")]),
-    logger:debug("password:~p~n", [Model(param, "password")]),
-    Query = io_lib:format("{\"_source\":true,\"query\":{\"bool\":{\"must\":[{\"term\":{\"email.keyword\":\"~s\"}}]}}}",
-			  [Model(param, "userid")]),
-    case es:request("/users/_search", lists:flatten(Query)) of
+    Query = [{size, 5},
+	     {from, 0},
+	     {<<"_source">>, false},
+	     {fields, [<<"first_name">>,
+		       <<"last_name">>,
+		       <<"email">>]},
+	     {query, [{bool,
+		       [{must,
+			 [{term,
+			   [{'email.keyword',
+			     Model(param, "userid")}]}]}]
+		      }]}],
+    %% POST 방식이라 파라미터 값이 바이너리 형태임
+    %% GET 방식인 경우 파라미터 값을 받아 바이너리로 바꿔줘야함.
+    case es:search(<<"users">>, Query) of
 	{ok, Resp} ->
 	    login_check(Model, Resp);
 	{error, Resp} ->
 	    Model(put, {result, error}),
-	    Model(put, {reson, facade:to_json(Resp)})
+	    Model(put, {reson, facade:to_ejson(Resp)})
     end.
 
 %% jiffy로 decode 결과는 다음과 같은 erlang 데이터로 표현된다.
@@ -33,34 +108,36 @@ login(Model) ->
 %% object -> {[{}]} -> tuple:proplists
 %% list   -> [[{}]] -> list:proplists
 login_check(Model, Resp) ->
-    {Root} = facade:to_json(Resp),
-    {Hits} = ?prop(<<"hits">>, Root),
-    case ?prop(<<"hits">>, Hits) of
+    case ?prop(<<"hits">>,
+	       ?prop(<<"hits">>,
+		     facade:to_ejson(Resp))) of
 	[] ->
 	    Model(put, {result, <<"user not found">>});
-	[{Hitss}] ->
-	    {Source} = ?prop(<<"_source">>, Hitss),
-
-	    Firstname = ?prop(<<"first_name">>, Source),
-	    Lastname = ?prop(<<"last_name">>, Source),
-	    Email = ?prop(<<"email">>, Source),
+	[Hits] ->
+	    Id = ?prop(<<"_id">>, Hits),
+	    Fields = ?prop(<<"fields">>, Hits),
+	    Firstname = ?prop(<<"first_name">>, Fields),
+	    Lastname = ?prop(<<"last_name">>, Fields),
+	    Email = ?prop(<<"email">>, Fields),
 	    Username = iolist_to_binary([Firstname, <<" ">>, Lastname]),
-	    Password = Model(param, "password"),
+	    _Password = Model(param, "password"),
 	    %% compare password parameter with stored password
 
 	    {_Type, Config} = router_srv:get_authinfo(),
-	    Key = ?prop(key, Config),
-	    Expiration = ?prop(expiration, Config),
+       	    Expiration = ?prop(expiration, Config),
 	    Claims = [{email, Email},
 		      {username, Username}],
-	    {ok, Token} = facade:token_encode(Claims),
-	    UpTo = erlang:system_time(second) + Expiration,
-	    {{Y,M,D}, {H,Mi,S}} = calendar:gregorian_seconds_to_datetime(UpTo),
-	    logger:debug("expires at ~p-~p-~p ~2..0B:~2..0B:~2..0B",
-			 [Y+1970,M,D,H,Mi,S]),
-	    Result = {[{token, Token},
-		       {username, Username},
-		       {email, Email},
-		       {expires, UpTo}]},
-	    Model(put, {result, Result})
+	    case facade:token_encode(Claims) of
+		{ok, Token} ->
+		    UpTo = erlang:system_time(second) + Expiration,
+		    %%{{Y,M,D}, {H,Mi,S}} = calendar:gregorian_seconds_to_datetime(UpTo),
+		    Model(put, {id, Id}),
+		    Model(put, {token, Token}),
+		    Model(put, {username, Username}),
+		    Model(put, {email, Email}),
+		    Model(put, {expires, UpTo});
+		{error, Reason} ->
+		    Model(put, {result, fail}),
+		    Model(put, {reason, Reason})
+	    end
     end.

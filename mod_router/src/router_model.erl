@@ -5,11 +5,12 @@
 	 handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2]).
 
--export([param/2, header/2, userinfo/2, put/2, get/2]).
+-export([param/2, header/2, userinfo/2, put/2, get/2, clear/2, response/2]).
 
+-define(TIMEOUT, 1000).
 -include("macros.hrl").
 
--record(state, {params, header, userinfo, session_data={[]}}).
+-record(state, {params, header, userinfo, session_data=[]}).
 
 stop(Pid, _Arg) ->
     gen_server:cast(Pid, stop).
@@ -57,18 +58,19 @@ put(Pid, {Name, Value}) ->
 get(Pid, []) ->
     gen_server:call(Pid, get);
 get(Pid, Name) ->
-    get_server:call(Pid, {get, Name}).
+    gen_server:call(Pid, {get, Name}).
 
-start(InitArgs) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, InitArgs, []),
+clear(Pid, []) ->
+    gen_server:call(Pid, clear).
+
+response(Pid, []) ->
+    gen_server:call(Pid, response).
+
+start(RequestData) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, RequestData, []),
     %% Cmd : param, header, userinfo, store
     fun(Cmd, Args) ->
-	    case apply(?MODULE, Cmd, [Pid, Args]) of
-		{fail, Reason} ->
-		    error(Reason);
-		Value ->
-		    Value
-	    end
+	    apply(?MODULE, Cmd, [Pid, Args])
     end.
 
 init([Params, Header, UserInfo]) ->
@@ -94,7 +96,13 @@ handle_call({param, Name, Type, Default}, _, State) ->
 	undefined ->
 	    {reply, Default, State};
 	Value ->
-	    {reply, convert(Type, Value), State}
+	    if Type == int ->
+		    {reply, list_to_integer(Value), State};
+	       Type == float ->
+		    {reply, list_to_float(Value), State};
+	       true ->
+		    {reply, Value, State}
+	    end
     end;
 handle_call(header, _, State) ->
     {reply, State#state.header, State};
@@ -111,10 +119,14 @@ handle_call(get, _, State) ->
 handle_call({get, Name}, _, State) ->
     Value = ?prop(Name, State#state.session_data),
     {reply, Value, State};
+handle_call(response, _, State) ->
+    {reply, State#state.session_data, State, ?TIMEOUT};
 handle_call({put, NewData}, _, State) ->
-    {List} = State#state.session_data,
+    List = State#state.session_data,
     NewList = List ++ [NewData],
-    {reply, NewData, State#state{session_data={NewList}}};
+    {reply, NewData, State#state{session_data=NewList}};
+handle_call(clear, _, State) ->
+    {reply, ok, State#state{session_data=[]}};
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
@@ -123,6 +135,12 @@ handle_cast(stop, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
+handle_info(timeout, State) ->
+    %% Reason이 normal이 아닌 경우는
+    %% 비정상 stop으로 간주 하여 crash 로그출력
+    %% 및 그에 해당하는 재시작 로직을 탄다.
+    %% 이기서는 정상 종료 normal
+    {stop, normal, State};
 handle_info(Info, State) ->
     logger:debug("Info message:~p", [Info]),
     {noreply, State}.
@@ -131,8 +149,3 @@ handle_info(Info, State) ->
 terminate(Reason, _State) ->
     logger:debug("Model Terminates:~p:~p", [Reason, self()]),
     ok.
-
-convert(int, Value) ->
-    list_to_integer(Value);
-convert(float, Value) ->
-    list_to_float(Value).
