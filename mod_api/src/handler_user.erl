@@ -15,9 +15,10 @@ user(Model) ->
     logger:debug("User Id : ~p~n", [UserId]),
 
     {ok, Result} = es:search_by_id(<<"users">>, <<"_doc">>, list_to_binary(UserId)),
-    ResultData = facade:to_ejson(Result),
+    ResultData = misclib:to_ejson(Result),
     Source = ?prop(<<"_source">>, ResultData),
     Model(put, {result, success}),
+    Model(put, {source, Source}),
     Model(put, {username, ?prop(<<"first_name">>, Source)}),
     Model(put, {lastname, ?prop(<<"last_name">>, Source)}),
     Model(put, {email, ?prop(<<"first_name">>, Source)}).
@@ -61,7 +62,7 @@ users(Model) ->
 	    Model(put, {sample2, Sample}),
 	    %%Model(put, Sample),
 	    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
-	    Model(put, {result, facade:to_ejson(Resp)});
+	    Model(put, {result, misclib:to_ejson(Resp)});
 	{error, Resp} ->
-	    Model(put, {result, facade:to_ejson(Resp)})
+	    Model(put, {result, misclib:to_ejson(Resp)})
     end.

@@ -40,7 +40,7 @@ request_get(Uri) ->
 
 request_post(Uri, Data) ->
     Url = iolist_to_binary([?HOST|Uri]),
-    BodyData = facade:stringify(Data),
+    BodyData = misclib:stringify(Data),
     case httpc:request(post, {Url, [], ?CTYPE, BodyData}, [], []) of
 	{ok, Result} ->
 	    {_Status, _Header, Body} = Result,

@@ -1,4 +1,4 @@
--module(router_srv).
+-module(api_router).
 -behavior(gen_server).
 
 -export([start_link/0,
@@ -141,7 +141,9 @@ check_auth([], _) ->
 check_auth([guest], _) ->
     [{auth_type, guest}];
 check_auth(_Ath, Header) ->
-    case facade:token_decode(Header) of
+    {_Type, Config} = get_authinfo(),
+    Key = ?prop(key, Config),
+    case misclib:token_decode(Header, Key) of
 	{error, Reason} ->
 	    {unauthorized, Reason};
 	Value ->

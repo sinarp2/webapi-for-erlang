@@ -1,16 +1,28 @@
--module(router_model).
+-module(api_model).
 -behavior(gen_server).
 
--export([start/1, stop/2, init/1,
-	 handle_call/3, handle_cast/2, handle_info/2,
+-export([start/1,
+	 stop/2,
+	 init/1,
+	 handle_call/3,
+	 handle_cast/2,
+	 handle_info/2,
 	 terminate/2]).
 
--export([param/2, header/2, userinfo/2, put/2, get/2, clear/2, response/2]).
+-export([param/2,
+	 header/2,
+	 userinfo/2,
+	 put/2,
+	 get/2,
+	 clear/2]).
 
 -define(TIMEOUT, 1000).
 -include("macros.hrl").
 
--record(state, {params, header, userinfo, session_data=[]}).
+-record(state, {params,
+		header,
+		userinfo,
+		session_data=[]}).
 
 stop(Pid, _Arg) ->
     gen_server:cast(Pid, stop).
@@ -43,8 +55,6 @@ userinfo(Pid, []) ->
 userinfo(Pid, Name) ->
     gen_server:call(Pid, {userinfo, Name}).
 
-put(_Pid, Args) when not is_tuple(Args) ->
-    erlang:error("Model put value must be a tuple");
 put(Pid, {Name, Value}) ->
     NewValue =
 	case io_lib:char_list(Value) of
@@ -62,9 +72,6 @@ get(Pid, Name) ->
 
 clear(Pid, []) ->
     gen_server:call(Pid, clear).
-
-response(Pid, []) ->
-    gen_server:call(Pid, response).
 
 start(RequestData) ->
     {ok, Pid} = gen_server:start_link(?MODULE, RequestData, []),
@@ -115,12 +122,10 @@ handle_call({userinfo, Name}, _, State) ->
     Value = ?prop(Name, State#state.userinfo),
     {reply, Value, State};
 handle_call(get, _, State) ->
-    {reply, State#state.session_data, State};
+    {reply, State#state.session_data, State, ?TIMEOUT};
 handle_call({get, Name}, _, State) ->
     Value = ?prop(Name, State#state.session_data),
     {reply, Value, State};
-handle_call(response, _, State) ->
-    {reply, State#state.session_data, State, ?TIMEOUT};
 handle_call({put, NewData}, _, State) ->
     List = State#state.session_data,
     NewList = List ++ [NewData],

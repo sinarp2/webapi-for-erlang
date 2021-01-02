@@ -1,4 +1,4 @@
--module(mod_cb).
+-module(mod_api).
 
 -export([do/1]).
 
@@ -47,7 +47,7 @@ parse_param(_Method, _UriMap, Body) ->
 	    0 ->
 		[];
 	    _ ->
-		facade:to_ejson(Body)
+		misclib:to_ejson(Body)
 	end,
     [{binary_to_list(Name), Value} ||
 	{Name, Value} <- BodyList].
@@ -58,7 +58,7 @@ parse_param(_Method, _UriMap, Body) ->
 %% @end
 %%--------------------------------------------------------------------
 route_to_handler(Path, Method, Header, Params) ->
-    case router_srv:get_handler(Path, Method, Header) of
+    case api_router:get_handler(Path, Method, Header) of
 	%% auth check not implemented
 	{unauthorized, Reason} ->
 	    {401, [{fail, <<"unauthorized">>}, {reason, Reason}]};
@@ -75,24 +75,24 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @end
 %%--------------------------------------------------------------------
 process_logic(Mod, Fun, Header, Params, UserInfo) ->
-    Model = router_model:start([Params, Header, UserInfo]),
+    Model = api_model:start([Params, Header, UserInfo]),
     try
 	apply(Mod, Fun, [Model]),
 	%% response 호출과 함께 Model server의 Timeout 시작
-	{200, Model(response, [])}
+	{200, Model(get, [])}
     catch
+	throw:Reason ->
+	    Model(clear, []),
+	    Model(put, {result, fail}),
+	    Model(put, {reason, Reason}),
+	    {200, Model(get, [])};
 	error:Err:Stacktrace ->
 	    logger:error("handler error:~p~n", [Err]),
 	    logger:error("handler stack:~p~n", [Stacktrace]),
 	    Model(clear, []),
 	    Model(put, {result, error}),
 	    Model(put, {reason, Err}),
-	    {500, Model(response, [])};
-	throw:Reason ->
-	    Model(clear, []),
-	    Model(put, {result, fail}),
-	    Model(put, {reason, Reason}),
-	    {400, Model(response, [])}
+	    {500, Model(get, [])}
     after
 	logger:debug("try after...")
 	%%Model(stop, [])
@@ -113,7 +113,7 @@ response({Code, Payload}) ->
 
 try_encode(Code, Payload) ->
     try
-	IoList = facade:stringify(Payload),
+	IoList = misclib:stringify(Payload),
 	{Code, IoList}
     catch
 	Type:Reason:Stack ->

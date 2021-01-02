@@ -4,7 +4,6 @@
 
 -include("macros.hrl").
 
-
 signup(Model) ->
     %% POST
     %% email, username, password
@@ -36,7 +35,7 @@ signup(Model) ->
 	    ok
     end,
 
-    Data = facade:to_ejson(Result),
+    Data = misclib:to_ejson(Result),
     H1 = ?prop(<<"hits">>, Data),
     H2 = ?prop(<<"hits">>, H1),
     if
@@ -63,7 +62,7 @@ signup(Model) ->
 
     {ok, InsResult} = es:insert(<<"users">>, <<"_doc">>, Doc),
 
-    PropResult = facade:to_ejson(InsResult),
+    PropResult = misclib:to_ejson(InsResult),
     Err = proplists:is_defined(<<"error">>, PropResult),
 
     if
@@ -100,7 +99,7 @@ login(Model) ->
 	    login_check(Model, Resp);
 	{error, Resp} ->
 	    Model(put, {result, error}),
-	    Model(put, {reson, facade:to_ejson(Resp)})
+	    Model(put, {reson, misclib:to_ejson(Resp)})
     end.
 
 %% jiffy로 decode 결과는 다음과 같은 erlang 데이터로 표현된다.
@@ -110,7 +109,7 @@ login(Model) ->
 login_check(Model, Resp) ->
     case ?prop(<<"hits">>,
 	       ?prop(<<"hits">>,
-		     facade:to_ejson(Resp))) of
+		     misclib:to_ejson(Resp))) of
 	[] ->
 	    Model(put, {result, <<"user not found">>});
 	[Hits] ->
@@ -123,11 +122,13 @@ login_check(Model, Resp) ->
 	    _Password = Model(param, "password"),
 	    %% compare password parameter with stored password
 
-	    {_Type, Config} = router_srv:get_authinfo(),
-       	    Expiration = ?prop(expiration, Config),
+	    {_Type, Config} = api_router:get_authinfo(),
+	    Alg = ?prop(algorithm, Config),
+	    Expiration = ?prop(expiration, Config),
+	    Key = ?prop(key, Config),
 	    Claims = [{email, Email},
 		      {username, Username}],
-	    case facade:token_encode(Claims) of
+	    case misclib:token_encode(Claims, Alg, Expiration, Key) of
 		{ok, Token} ->
 		    UpTo = erlang:system_time(second) + Expiration,
 		    %%{{Y,M,D}, {H,Mi,S}} = calendar:gregorian_seconds_to_datetime(UpTo),

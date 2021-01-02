@@ -1,7 +1,10 @@
--module(facade).
+-module(misclib).
 
--export([stringify/1, to_ejson/1]).
--export([token_encode/1, token_decode/1]).
+-export([stringify/1,
+	 to_ejson/1]).
+
+-export([token_encode/4,
+	 token_decode/2]).
 
 -include("macros.hrl").
 
@@ -16,16 +19,11 @@ stringify(Data) ->
     %% jsx는 []로 시작
     jsx:encode(Data).
 
-token_encode(Claims) ->
-    {_Type, Config} = router_srv:get_authinfo(),
-    Alg = ?prop(algorithm, Config),
-    logger:debug("alg:~p", [Alg]),
-    Expiration = ?prop(expiration, Config),
-    Key = ?prop(key, Config),
+token_encode(Claims, Alg, Expiration, Key) ->
     jwt:encode(Alg, Claims, Expiration, Key).
 
-token_decode(Header) ->
-    case ?prop("authorization", Header) of
+token_decode(Header, Key) ->
+    case ?prop(?AUTH_HEADER, Header) of
 	undefined ->
 	    {error, header_not_found};
 	HeaderVal ->
@@ -35,8 +33,6 @@ token_decode(Header) ->
 		    {error, invalid_header};
 		true ->
 		    Token = list_to_binary(tl(TokenList)),
-		    {_Type, Config} = router_srv:get_authinfo(),
-		    Key = ?prop(key, Config),
 		    case jwt:decode(Token, Key) of
 			{ok, Info} ->
 			    maps:to_list(Info);

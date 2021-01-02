@@ -2,14 +2,14 @@
 
 ERL=erl
 ROOT=$HOME/Downloads/erlang/webapi
-API_EBIN=$ROOT/mod_router/ebin
+API_EBIN=$ROOT/mod_api/ebin
 LIB_EBIN=$ROOT/lib/ebin
 
 PNAME=webapi
 
 start() {
 	 $ERL -detached -pa $API_EBIN -pa $LIB_EBIN -config $ROOT/sys \
-	      -service_name $PNAME -s inets start -s router_app start
+	      -service_name $PNAME -s inets start -s api_app start
 }
 
 stop() {
