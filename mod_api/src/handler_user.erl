@@ -14,9 +14,8 @@ user(Model) ->
     end,
     logger:debug("User Id : ~p~n", [UserId]),
 
-    {ok, Result} = es:search_by_id(<<"users">>, <<"_doc">>, list_to_binary(UserId)),
-    ResultData = misclib:to_ejson(Result),
-    Source = ?prop(<<"_source">>, ResultData),
+    Res = es:search_by_id(<<"users">>, <<"_doc">>, list_to_binary(UserId)),
+    Source = ?prop(<<"_source">>, Res),
     Model(put, {result, success}),
     Model(put, {source, Source}),
     Model(put, {username, ?prop(<<"first_name">>, Source)}),
@@ -39,7 +38,7 @@ users(Model) ->
 	     {size, Size},
 	     {from, From}],
 
-    {ok, Resp} = es:search(<<"users">>, Query),
+    Hits = es:search(<<"users">>, Query),
     %% es에서는 json 문자열로 리턴됨 "{\"took\":1,\"timed_out\":false
     %% io_list로 리턴해야되기 때문에 binary로 변환해야함
     %% <<"{\"took\":1,\"timed_out\":fals...>>
@@ -60,5 +59,5 @@ users(Model) ->
     Model(put, {sample1, unicode:characters_to_binary(Sample)}),
     Model(put, {sample2, Sample}),
     %%Model(put, Sample),
-    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
-    Model(put, {result, misclib:to_ejson(Resp)}).
+    Model(put, {result, success}),
+    Model(put, {data, Hits}).

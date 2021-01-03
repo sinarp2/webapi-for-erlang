@@ -13,6 +13,8 @@
 -define(HOST, <<"http://localhost:9200/">>).
 -define(CTYPE, "application/json").
 
+-include("macros.hrl").
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -20,13 +22,32 @@
 %% @end
 %%--------------------------------------------------------------------
 search(Index, Query) ->
-    request_post([Index, <<"/_search">>], Query).
+    {ok, Body} = request_post([Index, <<"/_search">>], Query),
+    %% es 결과 데이터에서 hits List를 추출
+    Edata = misclib:to_ejson(Body),
+    try
+	?prop(<<"hits">>, ?prop(<<"hits">>, Edata))
+    catch
+	_:Reason:Stack ->
+	    logger:error("es result error:~p", [Edata]),
+	    logger:error("reason:~p", [Reason]),
+	    logger:error("stack:~p", [Stack]),
+	    error(wrong_es_data)
+    end.
 
 search_by_id(Index, Doc, Id) ->
-    request_get([Index, <<"/">>, Doc, <<"/">>, Id]).
+    {ok, Body} = request_get([Index, <<"/">>, Doc, <<"/">>, Id]),
+    misclib:to_ejson(Body).
 
 insert(Index, Doc, Data) ->
-    request_post([Index, <<"/">>, Doc], Data).
+    {ok, Res} = request_post([Index, <<"/">>, Doc], Data),
+    ResData = misclib:to_ejson(Res),
+    case proplists:get_value(<<"error">>, ResData) of
+	undefined ->
+	    ok;
+	Val ->
+	    {fail, Val}
+    end.
 
 request_get(Uri) ->
     Url = iolist_to_binary([?HOST|Uri]),
