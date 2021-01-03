@@ -39,30 +39,26 @@ users(Model) ->
 	     {size, Size},
 	     {from, From}],
 
-    case es:search(<<"users">>, Query) of
-	{ok, Resp} ->
-	    %% es에서는 json 문자열로 리턴됨 "{\"took\":1,\"timed_out\":false
-	    %% io_list로 리턴해야되기 때문에 binary로 변환해야함
-	    %% <<"{\"took\":1,\"timed_out\":fals...>>
-	    %% 문자열이 아닌 json 객체로 리턴하려면 jiffy:decode !!! 해야함.
-	    %% string은 integer list로 표현되므로
-	    %% binary (<<"string type">>) 형태로 변환해 주어야 함.
-	    %% => string을 그대로 jiffy encode하게 되면 integer list
-	    %% 로 표시됨 [12, 234, 432, 12, 332, ...] 형태
-	    %% binary형태로 변환하면 json string으로 변환됨
-	    %% javascript에서 인식된 json object로 리턴하려면
-	    %% json 문자열을 encding
+    {ok, Resp} = es:search(<<"users">>, Query),
+    %% es에서는 json 문자열로 리턴됨 "{\"took\":1,\"timed_out\":false
+    %% io_list로 리턴해야되기 때문에 binary로 변환해야함
+    %% <<"{\"took\":1,\"timed_out\":fals...>>
+    %% 문자열이 아닌 json 객체로 리턴하려면 jiffy:decode !!! 해야함.
+    %% string은 integer list로 표현되므로
+    %% binary (<<"string type">>) 형태로 변환해 주어야 함.
+    %% => string을 그대로 jiffy encode하게 되면 integer list
+    %% 로 표시됨 [12, 234, 432, 12, 332, ...] 형태
+    %% binary형태로 변환하면 json string으로 변환됨
+    %% javascript에서 인식된 json object로 리턴하려면
+    %% json 문자열을 encding
 
-	    %% 데이터 형식은 상황에 따라 달라지므로
-	    %% elasticsearch 사용 json 문자열을 대상으로한
-	    %% 예만 제시.
-	    Sample = "io_list로 리턴해야되기 때문에 binary로 변환해야함",
+    %% 데이터 형식은 상황에 따라 달라지므로
+    %% elasticsearch 사용 json 문자열을 대상으로한
+    %% 예만 제시.
+    Sample = "io_list로 리턴해야되기 때문에 binary로 변환해야함",
 
-	    Model(put, {sample1, unicode:characters_to_binary(Sample)}),
-	    Model(put, {sample2, Sample}),
-	    %%Model(put, Sample),
-	    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
-	    Model(put, {result, misclib:to_ejson(Resp)});
-	{error, Resp} ->
-	    Model(put, {result, misclib:to_ejson(Resp)})
-    end.
+    Model(put, {sample1, unicode:characters_to_binary(Sample)}),
+    Model(put, {sample2, Sample}),
+    %%Model(put, Sample),
+    Model(put, {result_string, unicode:characters_to_binary(Resp)}),
+    Model(put, {result, misclib:to_ejson(Resp)}).

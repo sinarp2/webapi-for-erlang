@@ -26,14 +26,7 @@ signup(Model) ->
 	      [{term,
 		[{<<"email.keyword">>, Email}]}]}],
 
-    {Ok, Result} =  es:search(<<"users">>, Query),
-
-    if
-	Ok == error ->
-	    throw(Result);
-	true ->
-	    ok
-    end,
+    {ok, Result} =  es:search(<<"users">>, Query),
 
     Data = misclib:to_ejson(Result),
     H1 = ?prop(<<"hits">>, Data),
@@ -69,11 +62,12 @@ signup(Model) ->
 	Err ->
 	    throw(?prop(<<"error">>, PropResult));
 	true ->
+	    Model(put, {result, success}),
 	    Model(put, {email, Email})
     end.
 
 logout(Model) ->
-    Model(put, {result, ok}).
+    Model(put, {result, success}).
 
 login(Model) ->
     %% 포스트 데이터인 경우 바이너리 형태로 파싱이되어 넘어옴.
@@ -94,24 +88,18 @@ login(Model) ->
 		      }]}],
     %% POST 방식이라 파라미터 값이 바이너리 형태임
     %% GET 방식인 경우 파라미터 값을 받아 바이너리로 바꿔줘야함.
-    case es:search(<<"users">>, Query) of
-	{ok, Resp} ->
-	    login_check(Model, Resp);
-	{error, Resp} ->
-	    Model(put, {result, error}),
-	    Model(put, {reson, misclib:to_ejson(Resp)})
-    end.
+    {ok, Resp} = es:search(<<"users">>, Query),
 
-%% jiffy로 decode 결과는 다음과 같은 erlang 데이터로 표현된다.
-%% root   -> {[{}]} -> tuple:proplists
-%% object -> {[{}]} -> tuple:proplists
-%% list   -> [[{}]] -> list:proplists
-login_check(Model, Resp) ->
+    %% jiffy로 decode 결과는 다음과 같은 erlang 데이터로 표현된다.
+    %% root   -> {[{}]} -> tuple:proplists
+    %% object -> {[{}]} -> tuple:proplists
+    %% list   -> [[{}]] -> list:proplists
     case ?prop(<<"hits">>,
 	       ?prop(<<"hits">>,
 		     misclib:to_ejson(Resp))) of
 	[] ->
-	    Model(put, {result, <<"user not found">>});
+	    Model(put, {result, fail}),
+	    Model(put, {reason, <<"user not found">>});
 	[Hits] ->
 	    Id = ?prop(<<"_id">>, Hits),
 	    Fields = ?prop(<<"fields">>, Hits),
@@ -132,6 +120,7 @@ login_check(Model, Resp) ->
 		{ok, Token} ->
 		    UpTo = erlang:system_time(second) + Expiration,
 		    %%{{Y,M,D}, {H,Mi,S}} = calendar:gregorian_seconds_to_datetime(UpTo),
+		    Model(put, {result, success}),
 		    Model(put, {id, Id}),
 		    Model(put, {token, Token}),
 		    Model(put, {username, Username}),

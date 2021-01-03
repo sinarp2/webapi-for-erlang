@@ -35,7 +35,7 @@ request_get(Uri) ->
 	    {_Status, _Header, Body} = Result,
 	    {ok, Body};
 	Err ->
-	    Err
+	    error(Err)
     end.
 
 request_post(Uri, Data) ->
@@ -46,5 +46,5 @@ request_post(Uri, Data) ->
 	    {_Status, _Header, Body} = Result,
 	    {ok, Body};
 	Err ->
-	    Err
+	    error(Err)
     end.

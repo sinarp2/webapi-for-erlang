@@ -12,24 +12,24 @@
 do(Mod) ->
     case ?prop("content-type", Mod#mod.parsed_header) of
 	"multipart/form-data" ->
-	    response({400,
-		      [{result, error},
-		       {reason, <<"multipart/form-data not implemented.">>}]});
+	    response(400,
+		     [{result, error},
+		      {reason, <<"multipart/form-data not implemented.">>}]);
 	"application/json" ->
 	    UriMap = uri_string:parse(Mod#mod.request_uri),
 	    Method = Mod#mod.method,
 	    Header = Mod#mod.parsed_header,
 	    Params = parse_param(Method, UriMap,
 				 Mod#mod.entity_body),
-	    Result = route_to_handler(maps:get(path, UriMap),
-				      Method, Header, Params),
-	    response(Result);
+	    {HttpCode, Response} = route_to_handler(maps:get(path, UriMap),
+						    Method, Header, Params),
+	    response(HttpCode, Response);
 	undefined ->
-	    response({400, [{result, error},
-			    {reason, <<"content-type header not found.">>}]});
+	    response(400, [{result, error},
+			   {reason, <<"content-type header not found.">>}]);
 	_ ->
-	    response({400, [{result, error},
-			    {reason, <<"not supported content-type.">>}]})
+	    response(400, [{result, error},
+			   {reason, <<"not supported content-type.">>}])
     end.
 
 %%--------------------------------------------------------------------
@@ -65,8 +65,30 @@ route_to_handler(Path, Method, Header, Params) ->
 	undefined ->
 	    {404, [{fail, <<"handler not found">>}]};
 	{Mod, Fun, PathParams, UserInfo} ->
-	    process_logic(Mod, Fun, Header,
-			  PathParams ++ Params, UserInfo)
+	    Model = api_model:start([PathParams ++ Params, Header, UserInfo]),
+	    try
+		apply(Mod, Fun, [Model]),
+		%% response 호출과 함께 Model server의 Timeout 시작
+		{200, Model(get, [])}
+	    catch
+		%% handler 에서 throw 한 경우로 정상코드(200) 처리.
+		throw:Reason ->
+		    Model(clear, []),
+		    Model(put, {result, fail}),
+		    Model(put, {reason, Reason}),
+		    {200, Model(get, [])};
+		%% 시스템에서 발생한 오류로 서버츠 에러(500) 처리.
+		error:Err:Stack ->
+		    logger:error("handler error:~p~n", [Err]),
+		    logger:error("handler stack:~p~n", [Stack]),
+		    Model(clear, []),
+		    Model(put, {result, error}),
+		    Model(put, {reason, Err}),
+		    {500, Model(get, [])}
+		    %% after
+		    %% 	logger:debug("try after...")
+		    %% 	Model(stop, [])
+	    end
     end.
 
 %%--------------------------------------------------------------------
@@ -74,52 +96,10 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-process_logic(Mod, Fun, Header, Params, UserInfo) ->
-    Model = api_model:start([Params, Header, UserInfo]),
-    try
-	apply(Mod, Fun, [Model]),
-	%% response 호출과 함께 Model server의 Timeout 시작
-	{200, Model(get, [])}
-    catch
-	throw:Reason ->
-	    Model(clear, []),
-	    Model(put, {result, fail}),
-	    Model(put, {reason, Reason}),
-	    {200, Model(get, [])};
-	error:Err:Stacktrace ->
-	    logger:error("handler error:~p~n", [Err]),
-	    logger:error("handler stack:~p~n", [Stacktrace]),
-	    Model(clear, []),
-	    Model(put, {result, error}),
-	    Model(put, {reason, Err}),
-	    {500, Model(get, [])}
-    after
-	logger:debug("try after...")
-	%%Model(stop, [])
-    end.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-response({Code, Payload}) ->
-    {NewCode, IoList} = try_encode(Code, Payload),
-    Hd = [{code, NewCode},
+response(HttpCode, Payload) ->
+    IoList = misclib:stringify(Payload),
+    Hd = [{code, HttpCode},
 	  {content_type, "application/json"},
 	  %%{'Access-Control-Allow-Origin', "*"},
 	  {content_length, integer_to_list(iolist_size(IoList))}],
     {break, [{response, {response, Hd, [IoList]}}]}.
-
-try_encode(Code, Payload) ->
-    try
-	IoList = misclib:stringify(Payload),
-	{Code, IoList}
-    catch
-	Type:Reason:Stack ->
-	    logger:error("encoding error at respose", []),
-	    logger:error("~p:~p", [Type, Reason]),
-	    logger:error("Stack:~p", [Stack]),
-	    {500, [{result, error},
-		   {reason, <<"Internal Server Error">>}]}
-    end.
