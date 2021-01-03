@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 ERL=erl
-ROOT=$HOME/Documents/devel/erlang/webapi
+ROOT=/opt/local/devel/erlang/webapi
 API_EBIN=$ROOT/mod_api/ebin
 LIB_EBIN=$ROOT/lib/ebin
 
