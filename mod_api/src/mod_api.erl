@@ -10,11 +10,24 @@
 %% OPTION, HEAD 는 지원하지 않음.
 %%--------------------------------------------------------------------
 do(Mod) ->
+    Ocurr = string:str(Mod#mod.request_uri,
+		       api_router:get_prefix()),
+    if
+	Ocurr == 0 ->
+	    response(404, [{result, error},
+			   {reason, <<"Not Found">>}]);
+	true ->
+	    check_header(Mod)
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% check whether "content-type" header is "application/json"
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+check_header(Mod) ->
     case ?prop("content-type", Mod#mod.parsed_header) of
-	"multipart/form-data" ->
-	    response(400,
-		     [{result, error},
-		      {reason, <<"multipart/form-data not implemented.">>}]);
 	"application/json" ->
 	    UriMap = uri_string:parse(Mod#mod.request_uri),
 	    Method = Mod#mod.method,
@@ -24,12 +37,9 @@ do(Mod) ->
 	    {HttpCode, Response} = route_to_handler(maps:get(path, UriMap),
 						    Method, Header, Params),
 	    response(HttpCode, Response);
-	undefined ->
-	    response(400, [{result, error},
-			   {reason, <<"content-type header not found.">>}]);
 	_ ->
 	    response(400, [{result, error},
-			   {reason, <<"not supported content-type.">>}])
+			   {reason, <<"Bad Request">>}])
     end.
 
 %%--------------------------------------------------------------------

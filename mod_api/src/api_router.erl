@@ -7,9 +7,11 @@
 	 handle_cast/2]).
 
 -export([get_handler/3,
+	 get_prefix/0,
 	 get_authinfo/0]).
 
--record(state, {routes,
+-record(state, {prefix,
+		routes,
 		authinfo}).
 
 -record(route, {pattern,
@@ -44,6 +46,9 @@ get_handler(Path, Method, Headers) ->
 	    end
     end.
 
+get_prefix() ->
+    gen_server:call(?MODULE, prefix).
+
 get_authinfo() ->
     gen_server:call(?MODULE, authinfo).
 
@@ -63,10 +68,14 @@ init([]) ->
     Auth = ?prop(authentication, InfoList),
     Catalog = build_catalog(Routes, [Prefix], []),
     %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
-    {ok, #state{routes=Catalog, authinfo=Auth}}.
+    {ok, #state{prefix=Prefix,
+		routes=Catalog,
+		authinfo=Auth}}.
 
 handle_call(routes, _, State) ->
     {reply, {State#state.routes, State#state.authinfo}, State};
+handle_call(prefix, _, State) ->
+    {reply, State#state.prefix, State};
 handle_call(authinfo, _, State) ->
     {reply, State#state.authinfo, State}.
 
