@@ -73,20 +73,20 @@ route_to_handler(Path, Method, Header, Params) ->
 	{unauthorized, Reason} ->
 	    {401, [{fail, <<"unauthorized">>}, {reason, Reason}]};
 	undefined ->
-	    {404, [{fail, <<"handler not found">>}]};
+	    {403, [{fail, <<"Requested endpoint is forbidden">>}]};
 	{Mod, Fun, PathParams, UserInfo} ->
 	    Model = api_model:start([PathParams ++ Params, Header, UserInfo]),
 	    try
 		apply(Mod, Fun, [Model]),
 		%% response 호출과 함께 Model server의 Timeout 시작
-		{200, Model(get, [])}
+		{200, {Model(mode, []), Model(get, [])}}
 	    catch
 		%% handler 에서 throw 한 경우로 정상코드(200) 처리.
-		throw:Reason ->
+		%% -> {code, reason} 으로 변경
+		throw:{Code, Reason} ->
 		    Model(clear, []),
-		    Model(put, {result, fail}),
 		    Model(put, {reason, Reason}),
-		    {200, Model(get, [])};
+		    {Code, Model(get, [])};
 		%% 시스템에서 발생한 오류로 서버츠 에러(500) 처리.
 		error:Err:Stack ->
 		    logger:error("handler error:~p~n", [Err]),
@@ -107,7 +107,13 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @end
 %%--------------------------------------------------------------------
 response(HttpCode, Payload) ->
-    IoList = misclib:stringify(Payload),
+    IoList = case Payload of
+		 {raw, Data} ->
+		     lists:flatten(io_lib:format("~p", [Data]));
+		 _ ->
+		     misclib:stringify(Payload)
+	     end,
+    logger:debug("~p", [IoList]),
     Hd = [{code, HttpCode},
 	  {content_type, "application/json"},
 	  %%{'Access-Control-Allow-Origin', "*"},

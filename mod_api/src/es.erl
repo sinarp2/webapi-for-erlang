@@ -44,7 +44,7 @@ insert(Index, Doc, Data) ->
     ResData = misclib:to_ejson(Res),
     case proplists:get_value(<<"error">>, ResData) of
 	undefined ->
-	    ok;
+	    ResData;
 	Val ->
 	    {fail, Val}
     end.

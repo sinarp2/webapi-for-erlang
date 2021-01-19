@@ -8,10 +8,12 @@
 
 -export([get_handler/3,
 	 get_prefix/0,
-	 get_authinfo/0]).
+	 get_authinfo/0,
+	 get_routes/0]).
 
 -record(state, {prefix,
 		routes,
+		catalog,
 		authinfo}).
 
 -record(route, {pattern,
@@ -31,10 +33,10 @@
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
 get_handler(Path, Method, Headers) ->
-    {Routes, _} = gen_server:call(?MODULE, routes),
+    Catalog = gen_server:call(?MODULE, catalog),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
-    case find_handler(string:lowercase(Method) ++ ":" ++ Path, Routes) of
+    case find_handler(string:lowercase(Method) ++ ":" ++ Path, Catalog) of
 	undefined ->
 	    undefined;
 	{Ath, Mod, Fun, PathParams} ->
@@ -51,6 +53,9 @@ get_prefix() ->
 
 get_authinfo() ->
     gen_server:call(?MODULE, authinfo).
+
+get_routes() ->
+    gen_server:call(?MODULE, routes).
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -69,15 +74,19 @@ init([]) ->
     Catalog = build_catalog(Routes, [Prefix], []),
     %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
     {ok, #state{prefix=Prefix,
-		routes=Catalog,
+		routes=Routes,
+		catalog=Catalog,
 		authinfo=Auth}}.
 
 handle_call(routes, _, State) ->
-    {reply, {State#state.routes, State#state.authinfo}, State};
+    {reply, State#state.routes, State};
 handle_call(prefix, _, State) ->
     {reply, State#state.prefix, State};
+handle_call(catalog, _, State) ->
+    {reply, State#state.catalog, State};
 handle_call(authinfo, _, State) ->
     {reply, State#state.authinfo, State}.
+
 
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -114,6 +123,7 @@ uri_pattern(Method, Prefix, UriPath) ->
 	re:replace(UriPath, "{([a-z_]+)}",
 		   "(?<\\g{1}>[^/,? ]+)",
 		   [global, {return, list}]) ++ "$",
+    %% logger:debug("pattern:~p", [Str]),
     re:compile(Str).
 
 %%--------------------------------------------------------------------

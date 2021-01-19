@@ -14,12 +14,14 @@
 	 userinfo/2,
 	 put/2,
 	 get/2,
-	 clear/2]).
+	 clear/2,
+	 mode/2]).
 
 -define(TIMEOUT, 1000).
 -include("macros.hrl").
 
--record(state, {params,
+-record(state, {mode=json,
+		params,
 		header,
 		userinfo,
 		session_data=[]}).
@@ -72,6 +74,11 @@ get(Pid, Name) ->
 
 clear(Pid, []) ->
     gen_server:call(Pid, clear).
+
+mode(Pid, raw) ->
+    gen_server:call(Pid, {mode, raw});
+mode(Pid, []) ->
+    gen_server:call(Pid, mode).
 
 start(RequestData) ->
     {ok, Pid} = gen_server:start_link(?MODULE, RequestData, []),
@@ -132,6 +139,10 @@ handle_call({put, NewData}, _, State) ->
     {reply, NewData, State#state{session_data=NewList}};
 handle_call(clear, _, State) ->
     {reply, ok, State#state{session_data=[]}};
+handle_call(mode, _, State) ->
+    {reply, State#state.mode, State};
+handle_call({mode, raw}, _, State) ->
+    {reply, ok, State#state{mode = raw}};
 handle_call(_, _, State) ->
     {reply, ok, State}.
 
