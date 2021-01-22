@@ -13,8 +13,6 @@
 -define(HOST, <<"http://localhost:9200/">>).
 -define(CTYPE, "application/json").
 
--include("macros.hrl").
-
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -24,9 +22,9 @@
 search(Index, Query) ->
     {ok, Body} = request_post([Index, <<"/_search">>], Query),
     %% es 결과 데이터에서 hits List를 추출
-    Edata = misclib:to_ejson(Body),
+    Edata = misclib:json_to_terms(Body),
     try
-	?prop(<<"hits">>, ?prop(<<"hits">>, Edata))
+	proplists:get_value(<<"hits">>, proplists:get_value(<<"hits">>, Edata))
     catch
 	_:Reason:Stack ->
 	    logger:error("es result error:~p", [Edata]),
@@ -37,11 +35,11 @@ search(Index, Query) ->
 
 search_by_id(Index, Doc, Id) ->
     {ok, Body} = request_get([Index, <<"/">>, Doc, <<"/">>, Id]),
-    misclib:to_ejson(Body).
+    misclib:json_to_terms(Body).
 
 insert(Index, Doc, Data) ->
     {ok, Res} = request_post([Index, <<"/">>, Doc], Data),
-    ResData = misclib:to_ejson(Res),
+    ResData = misclib:json_to_terms(Res),
     case proplists:get_value(<<"error">>, ResData) of
 	undefined ->
 	    ResData;
@@ -61,7 +59,7 @@ request_get(Uri) ->
 
 request_post(Uri, Data) ->
     Url = iolist_to_binary([?HOST|Uri]),
-    BodyData = misclib:stringify(Data),
+    BodyData = misclib:terms_to_json(Data),
     case httpc:request(post, {Url, [], ?CTYPE, BodyData}, [], []) of
 	{ok, Result} ->
 	    {_Status, _Header, Body} = Result,

@@ -1,21 +1,20 @@
 -module(misclib).
 
--export([stringify/1,
-	 to_ejson/1]).
+-export([json_to_terms/1,
+	 terms_to_json/1]).
 
 -export([token_encode/4,
 	 token_decode/2]).
 
--export([flatten/5]).
 
--include("macros.hrl").
-
-to_ejson(JsonStr) ->
+json_to_terms(JsonData) when is_list(JsonData) ->
+    jsx:decode(list_to_binary(JsonData), []);
+json_to_terms(JsonData) ->
     %% jiffy는문자열을 받지만 jsx는 바이너리로 받음.
     %% jiffy:decode(JsonStr).
-    jsx:decode(list_to_binary(JsonStr), []).
+    jsx:decode(JsonData, []).
 
-stringify(Data) ->
+terms_to_json(Data) ->
     %% jiffy는 {[]}로 시작
     %% {_} 이면 JSON Object
     %% [_] 이면 JSON Array
@@ -29,7 +28,7 @@ token_encode(Claims, Alg, Expiration, Key) ->
     jwt:encode(Alg, Claims, Expiration, Key).
 
 token_decode(Header, Key) ->
-    case ?prop(?AUTH_HEADER, Header) of
+    case proplists:get_value("authorization", Header) of
 	undefined ->
 	    {error, header_not_found};
 	HeaderVal ->
@@ -47,15 +46,3 @@ token_decode(Header, Key) ->
 		    end
 	    end
     end.
-
-%% 계층 구조의 데이터를 테이블 구조로 변환
-flatten(Nth, Roots, [H|T], Cols, Rcds) when length(Roots) >= Nth ->
-    Next = lists:nth(Nth, Roots),
-    NewCols = lists:append([Cols, proplists:delete(Next, H)]),
-    NextGen = proplists:get_value(Next, H),
-    flatten(Nth, Roots, T, Cols, flatten(Nth+1, Roots, NextGen, NewCols, Rcds));
-flatten(Nth, Roots, [H|T], Cols, Rcds) when length(Roots) < Nth ->
-    NewCols = lists:append([Cols, H]),
-    flatten(1, Roots, T, Cols, [NewCols|Rcds]);
-flatten(_, _, [], _, Rcds) ->
-    Rcds.

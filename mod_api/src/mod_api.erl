@@ -3,7 +3,6 @@
 -export([do/1]).
 
 -include_lib("inets/include/httpd.hrl").
--include("macros.hrl").
 
 %%--------------------------------------------------------------------
 %% Inets httpd api callback
@@ -11,13 +10,13 @@
 %%--------------------------------------------------------------------
 do(Mod) ->
     Ocurr = string:str(Mod#mod.request_uri,
-		       api_router:get_prefix()),
+		       binary_to_list(api_router:get_prefix())),
     if
 	Ocurr == 0 ->
 	    response(404, [{result, error},
 			   {reason, <<"Not Found">>}]);
 	true ->
-	    check_header(Mod)
+	    check_content_type(Mod)
     end.
 
 %%--------------------------------------------------------------------
@@ -26,8 +25,8 @@ do(Mod) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-check_header(Mod) ->
-    case ?prop("content-type", Mod#mod.parsed_header) of
+check_content_type(Mod) ->
+    case proplists:get_value("content-type", Mod#mod.parsed_header) of
 	"application/json" ->
 	    UriMap = uri_string:parse(Mod#mod.request_uri),
 	    Method = Mod#mod.method,
@@ -57,7 +56,7 @@ parse_param(_Method, _UriMap, Body) ->
 	    0 ->
 		[];
 	    _ ->
-		misclib:to_ejson(Body)
+		misclib:json_to_terms(Body)
 	end,
     [{binary_to_list(Name), Value} ||
 	{Name, Value} <- BodyList].
@@ -72,21 +71,22 @@ route_to_handler(Path, Method, Header, Params) ->
 	%% auth check not implemented
 	{unauthorized, Reason} ->
 	    {401, [{fail, <<"unauthorized">>}, {reason, Reason}]};
-	undefined ->
+	nomatch ->
 	    {403, [{fail, <<"Requested endpoint is forbidden">>}]};
-	{Mod, Fun, PathParams, UserInfo} ->
+	{Module, Func, PathParams, UserInfo} ->
 	    Model = api_model:start([PathParams ++ Params, Header, UserInfo]),
+	    logger:debug("path param:~p", [Model(param, [])]),
 	    try
-		apply(Mod, Fun, [Model]),
+		apply(binary_to_atom(Module), binary_to_atom(Func), [Model]),
 		%% response 호출과 함께 Model server의 Timeout 시작
-		{200, {Model(mode, []), Model(get, [])}}
+		{200, {Model(mode, []), Model(purge, [])}}
 	    catch
 		%% handler 에서 throw 한 경우로 정상코드(200) 처리.
 		%% -> {code, reason} 으로 변경
 		throw:{Code, Reason} ->
 		    Model(clear, []),
 		    Model(put, {reason, Reason}),
-		    {Code, Model(get, [])};
+		    {Code, Model(purge, [])};
 		%% 시스템에서 발생한 오류로 서버츠 에러(500) 처리.
 		error:Err:Stack ->
 		    logger:error("handler error:~p~n", [Err]),
@@ -94,7 +94,7 @@ route_to_handler(Path, Method, Header, Params) ->
 		    Model(clear, []),
 		    Model(put, {result, error}),
 		    Model(put, {reason, Err}),
-		    {500, Model(get, [])}
+		    {500, Model(purge, [])}
 		    %% after
 		    %% 	logger:debug("try after...")
 		    %% 	Model(stop, [])
@@ -106,14 +106,15 @@ route_to_handler(Path, Method, Header, Params) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-response(HttpCode, Payload) ->
-    IoList = case Payload of
-		 {raw, Data} ->
-		     lists:flatten(io_lib:format("~p", [Data]));
-		 _ ->
-		     misclib:stringify(Payload)
+response(HttpCode, Output) ->
+    IoList = case Output of
+		 {raw, Payload} ->
+		     lists:flatten(io_lib:format("~p", [Payload]));
+		 {json, Payload} ->
+		     misclib:terms_to_json(Payload);
+		 Payload ->
+		     misclib:terms_to_json(Payload)
 	     end,
-    logger:debug("~p", [IoList]),
     Hd = [{code, HttpCode},
 	  {content_type, "application/json"},
 	  %%{'Access-Control-Allow-Origin', "*"},
