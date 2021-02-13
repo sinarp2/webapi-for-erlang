@@ -1,7 +1,15 @@
 -module(handler_user).
 
--export([userlist/1, userinfo/1]).
+-export([userlist/1, userinfo/1, addavatar/1]).
 
+addavatar(Model) ->
+    %%logger:debug("add avatar:~p", [Model(param, [])]),
+    ImageBytes = Model(param, <<"image">>),
+    ImageSize = byte_size(ImageBytes),
+    Model(put, {result, success}),
+    Model(put, {userid, Model(param, <<"user_id">>)}),
+    Model(put, {image_size, lists:flatten(io_lib:format("~p bytes", [ImageSize]))}),
+    Model(put, {description, Model(param, <<"description">>)}).
 
 userinfo(Model) ->
     UserId = Model(param, <<"user_id">>),
