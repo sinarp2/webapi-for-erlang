@@ -76,6 +76,7 @@ init([]) ->
 		routes=RouteRecords,
 		authinfo=AuthInfo}}.
 
+
 handle_call(routes, _, State) ->
     {reply, State#state.routes, State};
 handle_call(prefix, _, State) ->
@@ -115,21 +116,6 @@ check_auth(Access, _) ->
     logger:error("binary no matching:~p", [Access]),
     {unauthorized, invalid_access_setting}.
 
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-flatten(Nth, Roots, [H|T], Cols, Rcds) when length(Roots) >= Nth ->
-    Next = lists:nth(Nth, Roots),
-    NewCols = lists:append([Cols, proplists:delete(Next, H)]),
-    NextGen = proplists:get_value(Next, H),
-    flatten(Nth, Roots, T, Cols, flatten(Nth+1, Roots, NextGen, NewCols, Rcds));
-flatten(Nth, Roots, [H|T], Cols, Rcds) when length(Roots) < Nth ->
-    NewCols = lists:append([Cols, H]),
-    flatten(1, Roots, T, Cols, [NewCols|Rcds]);
-flatten(_, _, [], _, Rcds) ->
-    Rcds.
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -173,3 +159,21 @@ find_route([Route=#route{pattern=Pattern}|T], Subject) ->
     end;
 find_route([], _) ->
     nomatch.
+
+%%--------------------------------------------------------------------
+%% @doc
+%%
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) >= Nth ->
+    Next = lists:nth(Nth, Paths),
+    NewCols = lists:append([Cols, proplists:delete(Next, H)]),
+    NextGen = proplists:get_value(Next, H),
+    flatten(Nth, Paths, T, Cols, flatten(Nth+1, Paths, NextGen, NewCols, Rcds));
+flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) < Nth ->
+    NewCols = lists:append([Cols, H]),
+    %% 마지막 T 노드 처리
+    flatten(Nth, Paths, T, Cols, [NewCols|Rcds]);
+flatten(_, _, [], _, Rcds) ->
+    Rcds.
