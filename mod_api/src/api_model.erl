@@ -14,11 +14,11 @@
 	 userinfo/2,
 	 put/2,
 	 get/2,
+	 purge/2,
 	 clear/2,
 	 mode/2]).
 
 -define(TIMEOUT, 1000).
--include("macros.hrl").
 
 -record(state, {mode=json,
 		params,
@@ -72,6 +72,9 @@ get(Pid, []) ->
 get(Pid, Name) ->
     gen_server:call(Pid, {get, Name}).
 
+purge(Pid, []) ->
+    gen_server:call(Pid, purge).
+
 clear(Pid, []) ->
     gen_server:call(Pid, clear).
 
@@ -89,31 +92,38 @@ start(RequestData) ->
 
 init([Params, Header, UserInfo]) ->
     process_flag(trap_exit, true),
-    {ok, #state{params=Params,
-		header=Header,
+    ToBin = fun(V) ->
+		    logger:debug("chars to binary:~p", [V]),
+		    case io_lib:char_list(V) of
+			true -> unicode:characters_to_binary(V);
+			false -> V
+		    end
+	    end,
+    {ok, #state{params=lists:map(fun({K,V}) -> {ToBin(K), ToBin(V)} end, Params),
+		header=lists:map(fun({K,V}) -> {ToBin(K), ToBin(V)} end, Header),
 		userinfo=UserInfo}}.
 
 handle_call(param, _, State) ->
     {reply, State#state.params, State};
 handle_call({param, Name}, _, State) ->
-    Value = ?prop(Name, State#state.params),
+    Value = proplists:get_value(Name, State#state.params),
     {reply, Value, State};
 handle_call({param, Name, Default}, _, State) ->
-    case ?prop(Name, State#state.params) of
+    case proplists:get_value(Name, State#state.params) of
 	undefined ->
 	    {reply, Default, State};
 	Value ->
 	    {reply, Value, State}
     end;
 handle_call({param, Name, Type, Default}, _, State) ->
-    case ?prop(Name, State#state.params) of
+    case proplists:get_value(Name, State#state.params) of
 	undefined ->
 	    {reply, Default, State};
 	Value ->
 	    if Type == int ->
-		    {reply, list_to_integer(Value), State};
+		    {reply, list_to_integer(binary:bin_to_list(Value)), State};
 	       Type == float ->
-		    {reply, list_to_float(Value), State};
+		    {reply, list_to_float(binary:bin_to_list(Value)), State};
 	       true ->
 		    {reply, Value, State}
 	    end
@@ -121,18 +131,20 @@ handle_call({param, Name, Type, Default}, _, State) ->
 handle_call(header, _, State) ->
     {reply, State#state.header, State};
 handle_call({header, Name}, _, State) ->
-    Value = ?prop(Name, State#state.header),
+    Value = proplists:get_value(Name, State#state.header),
     {reply, Value, State};
 handle_call(userinfo, _, State) ->
     {reply, State#state.userinfo, State};
 handle_call({userinfo, Name}, _, State) ->
-    Value = ?prop(Name, State#state.userinfo),
+    Value = proplists:get_value(Name, State#state.userinfo),
     {reply, Value, State};
 handle_call(get, _, State) ->
-    {reply, State#state.session_data, State, ?TIMEOUT};
+    {reply, State#state.session_data, State};
 handle_call({get, Name}, _, State) ->
-    Value = ?prop(Name, State#state.session_data),
+    Value = proplists:get_value(Name, State#state.session_data),
     {reply, Value, State};
+handle_call(purge, _, State) ->
+    {reply, State#state.session_data, State, ?TIMEOUT};
 handle_call({put, NewData}, _, State) ->
     List = State#state.session_data,
     NewList = List ++ [NewData],

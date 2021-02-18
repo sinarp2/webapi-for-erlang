@@ -1,33 +1,46 @@
 -module(handler_user).
 
--export([users/1, user/1]).
+-export([userlist/1, userinfo/1, addavatar/1]).
 
--include("macros.hrl").
+addavatar(Model) ->
+    %%logger:debug("add avatar:~p", [Model(param, [])]),
+    ImageBytes = Model(param, <<"image">>),
+    ImageSize = byte_size(ImageBytes),
+    Model(put, {result, success}),
+    Model(put, {userid, Model(param, <<"user_id">>)}),
+    Model(put, {image_size, lists:flatten(io_lib:format("~p bytes", [ImageSize]))}),
+    Model(put, {description, Model(param, <<"description">>)}).
 
-user(Model) ->
-    UserId = Model(param, "user_id"),
+userinfo(Model) ->
+    UserId = Model(param, <<"user_id">>),
     if
 	UserId == undefined ->
-	    throw(insufficient_path_info);
+	    throw({400, missing_path_param});
 	true ->
 	    ok
     end,
     logger:debug("User Id : ~p~n", [UserId]),
 
-    Res = es:search_by_id(<<"users">>, <<"_doc">>, list_to_binary(UserId)),
-    Source = ?prop(<<"_source">>, Res),
-    Model(put, {result, success}),
-    Model(put, {source, Source}),
-    Model(put, {username, ?prop(<<"first_name">>, Source)}),
-    Model(put, {lastname, ?prop(<<"last_name">>, Source)}),
-    Model(put, {email, ?prop(<<"first_name">>, Source)}).
+    Res = es:search_by_id(<<"users">>, <<"_doc">>, UserId),
+    logger:debug("result:~p", [Res]),
+    Found = proplists:get_value(<<"found">>, Res),
+    if Found == false ->
+	    Model(put, {result, fail}),
+	    Model(put, {reason, user_not_found});
+       true ->
+	    Source = proplists:get_value(<<"_source">>, Res),
+	    Model(put, {result, success}),
+	    Model(put, {source, Source}),
+	    Model(put, {username, proplists:get_value(<<"display_name">>, Source)}),
+	    Model(put, {lastname, proplists:get_value(<<"email">>, Source)})
+    end.
 
-users(Model) ->
+userlist(Model) ->
     %% Parameter Validation 기능???
     %% routes.config에 필수 파라미터 정보를 기입할 것인가???
 
-    Size = Model(param, ["_size", int, 5]),
-    From = Model(param, ["_page", int, 0]),
+    Size = Model(param, [<<"_size">>, int, 5]),
+    From = Model(param, [<<"_page">>, int, 0]),
 
     Query = [{fields, [<<"first_name">>,
 		       <<"last_name">>,

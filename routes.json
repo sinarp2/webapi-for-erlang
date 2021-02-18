@@ -1,0 +1,204 @@
+{
+  "prefix": "/private/api/v0",
+  "authentication": {
+    "type": "jwt",
+    "algorithm": "HS256",
+    "expiration": 86400,
+    "key": "ThisIsTheKey"
+  },
+  "routes": [
+    {
+      "module": "handler_auth",
+      "access": "guest",
+      "paths": [
+        {
+          "path": "/auth/login",
+          "methods": [
+            {
+              "method": "post",
+              "func": "login",
+              "description": "로그인, 토큰 생성",
+              "params": [
+                {
+                  "name": "email",
+                  "value": "string",
+                  "mandatory": true
+                },
+                {
+                  "name": "password",
+                  "value": "string",
+                  "mandatory": true
+                }
+              ],
+              "output": {
+                "id": "user id",
+                "email": "user email",
+                "display_name": "user display name",
+                "token": "a token for accessing to the api",
+                "upto": "token expires at"
+              }
+            }
+          ]
+        },
+        {
+          "path": "/auth/logout",
+          "methods": [
+            {
+              "method": "post",
+              "func": "logout",
+              "description": "logout, invalidate user login info",
+              "params": [
+                {
+                  "name": "id",
+                  "value": "string",
+                  "mandatory": true
+                }
+              ],
+              "output": {
+                "result": "success"
+              }
+            }
+          ]
+        },
+        {
+          "path": "/auth/signup",
+          "methods": [
+            {
+              "method": "post",
+              "func": "signup",
+              "description": "add new user",
+              "params": [
+                {
+                  "name": "email",
+                  "value": "string",
+                  "mandatory": true
+                },
+                {
+                  "name": "password",
+                  "value": "string",
+                  "mandatory": true
+                },
+                {
+                  "name": "display_name",
+                  "value": "string",
+                  "mandatory": true
+                }
+              ],
+              "output": {
+                "id": "newly created user id",
+                "email": "user email",
+                "display_name": "user display name",
+                "token": "a token for accessing to the api",
+                "upto": "token expires at"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "module": "handler_user",
+      "access": "membership",
+      "description": "사용자(회원) 정보 관리, 운영자가 아닌 사용자 자신의 정보 관리 목적으로 회원권한 접근, 운영자 권한 접근 기능은 따로 구현",
+      "paths": [
+        {
+          "path": "/user-management/users",
+          "methods": [
+            {
+              "method": "get",
+              "func": "userlist",
+              "description": "사용자 목록 출력, 요청 당 최대 100건 까지, 사용자 목록 출력은 운영자 기능으로 빠져야 함.",
+              "params": [
+                {
+                  "name": "size",
+                  "value": "integerd, default 10, positive value, cannot over 100",
+                  "mandatory": false
+                },
+                {
+                  "name": "offset",
+                  "value": "integer, default 0, positive value",
+                  "mandatory": false
+                }
+              ],
+              "output": [
+                {
+                  "id": "user id",
+                  "email": "user email",
+                  "display_name": "user display name",
+                  "created": "created timestamp"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "path": "/user-management/users/{user_id}",
+          "methods": [
+            {
+              "method": "get",
+              "func": "userinfo",
+              "description": "user infor",
+              "params": [
+                {
+                  "name": "id",
+                  "value": "string",
+                  "mandatory": true
+                }
+              ],
+              "output": {
+                "result": "success"
+              }
+            },
+            {
+              "method": "delete",
+              "func": "userdelete",
+              "description": "delete a user",
+              "params": [
+                {
+                  "name": "email",
+                  "value": "string",
+                  "mandatory": true
+                },
+                {
+                  "name": "password",
+                  "value": "string"
+                },
+                {
+                  "name": "display_name",
+                  "value": "string"
+                }
+              ],
+              "output": {
+                "id": "newly created user id",
+                "email": "user email",
+                "display_name": "user display name",
+                "token": "a token for accessing to the api",
+                "upto": "token expires at"
+              }
+            }
+          ]
+        },
+        {
+          "path": "/user-management/users/{user_id}/avatar",
+          "methods": [
+            {
+              "method": "post",
+              "func": "addavatar",
+              "description": "add user avatar",
+              "params": [
+                {
+                  "name": "email",
+                  "value": "string",
+                  "mandatory": true
+                }
+              ],
+              "output": {
+                "id": "newly created user id"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

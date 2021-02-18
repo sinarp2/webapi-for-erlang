@@ -2,14 +2,12 @@
 
 -export([login/1, logout/1, signup/1]).
 
--include("macros.hrl").
-
 signup(Model) ->
     %% POST
     %% email, username, password
-    DisplayName = Model(param, "displayName"),
-    Email = Model(param, "email"),
-    Password = Model(param, "password"),
+    DisplayName = Model(param, <<"displayName">>),
+    Email = Model(param, <<"email">>),
+    Password = Model(param, <<"password">>),
 
     if
 	DisplayName == undefined ->
@@ -49,12 +47,12 @@ signup(Model) ->
 	{fail, Reason} ->
 	    throw({401, Reason});
 	Res ->
-	    Id = ?prop(<<"_id">>, Res),
+	    Id = proplists:get_value(<<"_id">>, Res),
 	    case issue_token(Model, Id, Email, DisplayName) of
 		ok ->
 		    ok;
 		Reason ->
-		    logger:error("token failure:~", [Reason]),
+		    logger:error("token failure:~p", [Reason]),
 		    throw({401, issue_token_failure})
 	    end
     end.
@@ -68,7 +66,7 @@ login(Model) ->
     %% 포스트, 풋 인 경우 사용자가 알아서 바이너리 행태로 조회할 것인가?
     %% 포스트, 풋 인 경우 자동으로 바이너리로 변환해 줄 것인가?
 
-    ParamEmail = Model(param, "email"),
+    ParamEmail = Model(param, <<"email">>),
     if
 	ParamEmail == undefined ->
 	    throw({400, email_not_found});
@@ -98,14 +96,14 @@ login(Model) ->
     end,
 
     [UserData] = Hits,
-    Id = ?prop(<<"_id">>, UserData),
-    FieldData = ?prop(<<"fields">>, UserData),
+    Id = proplists:get_value(<<"_id">>, UserData),
+    FieldData = proplists:get_value(<<"fields">>, UserData),
     TupleList = [{K, hd(V)} || {K, V} <- FieldData],
-    DisplayName = ?prop(<<"display_name">>, TupleList),
-    StoredPassword = ?prop(<<"password">>, TupleList),
-    Email = ?prop(<<"email">>, TupleList),
+    DisplayName = proplists:get_value(<<"display_name">>, TupleList),
+    StoredPassword = proplists:get_value(<<"password">>, TupleList),
+    Email = proplists:get_value(<<"email">>, TupleList),
 
-    Password = Model(param, "password"),
+    Password = Model(param, <<"password">>),
     Hash = crypto:hash(md5, Password),
     HashStr = list_to_binary(io_lib:format("~p", [Hash])),
     %% compare password parameter with stored password
@@ -120,15 +118,15 @@ login(Model) ->
 	ok ->
 	    ok;
 	Reason ->
-	    logger:error("token failure:~", [Reason]),
+	    logger:error("token failure:~p", [Reason]),
 	    throw({401, issue_token_failure})
     end.
 
 issue_token(Model, Id, Email, DisplayName) ->
-    {_Type, Config} = api_router:get_authinfo(),
-    Alg = ?prop(algorithm, Config),
-    Expiration = ?prop(expiration, Config),
-    Key = ?prop(key, Config),
+    Props = api_router:get_authinfo(),
+    Alg = proplists:get_value(<<"algorithm">>, Props),
+    Expiration = proplists:get_value(<<"expiration">>, Props),
+    Key = proplists:get_value(<<"key">>, Props),
     Claims = [{email, Email},
 	      {display_name, DisplayName}],
     case misclib:token_encode(Claims, Alg, Expiration, Key) of

@@ -8,8 +8,8 @@ LIB_EBIN=$ROOT/lib/ebin
 PNAME=webapi
 
 start() {
-	 $ERL -detached -pa $API_EBIN -pa $LIB_EBIN -config $ROOT/sys \
-	      -service_name $PNAME -s inets start -s api_app start
+	 $ERL -smp -detached -pa $API_EBIN -pa $LIB_EBIN -config $ROOT/sys \
+	      -sname apisrv -service_name $PNAME -s inets start -s api_app start
 }
 
 stop() {
@@ -22,7 +22,7 @@ stop() {
 status() {
     while IFS= read -r pid
     do
-        echo $pid stared...
+        echo $pid running...
     done < <(ps auxww | grep "\-service_name $PNAME" | grep -v grep | awk '{print $2}')
 }
 

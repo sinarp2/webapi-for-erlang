@@ -13,18 +13,13 @@
 
 -record(state, {prefix,
 		routes,
-		catalog,
 		authinfo}).
 
 -record(route, {pattern,
-		auth,
-		path,
 		method,
 		module,
-		handler,
-		description}).
-
--include("macros.hrl").
+		func,
+		access}).
 
 %%-----------------------------------------
 %% RESTful Uri Path로 Handler를 검색
@@ -33,18 +28,20 @@
 %% Heads -> Request Header 값 (인증용도???)
 %%-----------------------------------------
 get_handler(Path, Method, Headers) ->
-    Catalog = gen_server:call(?MODULE, catalog),
+    Match = string:lowercase(Method) ++ ":" ++ Path,
+    Routes = gen_server:call(?MODULE, routes),
     %% Method는 "POST", "GET" 문자열이고 Router 설정에는
     %% get, post 등 atom형대로 정의 되었음.
-    case find_handler(string:lowercase(Method) ++ ":" ++ Path, Catalog) of
-	undefined ->
-	    undefined;
-	{Ath, Mod, Fun, PathParams} ->
-	    case check_auth(Ath, Headers) of
+    case find_route(Routes, Match) of
+	nomatch ->
+	    nomatch;
+	{Route, PathParams} ->
+	    logger:debug("access:~p", [Route#route.access]),
+	    case check_auth(Route#route.access, Headers) of
 		{unauthorized, Reason} ->
 		    {unauthorized, Reason};
 		UserInfo ->
-		    {Mod, Fun, PathParams, UserInfo}
+		    {Route#route.module, Route#route.func, PathParams, UserInfo}
 	    end
     end.
 
@@ -66,24 +63,24 @@ start_link() ->
 %%-----------------------------------------
 init([]) ->
     {ok, Path} = application:get_env(routes),
-    {ok, [InfoList]} = file:consult(Path),
-    %%logger:debug("Route Info: ~p~n", [InfoList]),
-    Prefix = ?prop(prefix, InfoList),
-    Routes = ?prop(routes, InfoList),
-    Auth = ?prop(authentication, InfoList),
-    Catalog = build_catalog(Routes, [Prefix], []),
-    %%logger:debug("RouteCatalog: ~p~n", [Catalog]),
+    {ok, Json} = file:read_file(Path),
+    Terms = misclib:json_to_terms(Json),
+
+    AuthInfo = proplists:get_value(<<"authentication">>, Terms),
+    Prefix = proplists:get_value(<<"prefix">>, Terms),
+    Routes = proplists:get_value(<<"routes">>, Terms),
+    RouteList = flatten(1, [<<"paths">>, <<"methods">>], Routes, [], []),
+    RouteRecords = make_pattern(RouteList, Prefix, []),
+
     {ok, #state{prefix=Prefix,
-		routes=Routes,
-		catalog=Catalog,
-		authinfo=Auth}}.
+		routes=RouteRecords,
+		authinfo=AuthInfo}}.
+
 
 handle_call(routes, _, State) ->
     {reply, State#state.routes, State};
 handle_call(prefix, _, State) ->
     {reply, State#state.prefix, State};
-handle_call(catalog, _, State) ->
-    {reply, State#state.catalog, State};
 handle_call(authinfo, _, State) ->
     {reply, State#state.authinfo, State}.
 
@@ -91,80 +88,92 @@ handle_call(authinfo, _, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-%%--------------------------------------------------------------------
-%% @doc RESTful URI Path로 Handler 검색을 위한 RegEx 생성
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-%% first depth : handler, auth, [path]
-build_catalog([{Mod,Ath,Pths}|T], E, Acc)
-  when is_list(Ath) ->
-    build_catalog(T, E, build_catalog(Pths, [Ath|[Mod|E]], Acc));
-%% second depth : path, [method]
-build_catalog([{Pth,Mtds}|T], E, Acc) ->
-    build_catalog(T, E, build_catalog(Mtds, [Pth|E], Acc));
-%% third depth : [method, fun, description]
-build_catalog([{Mtd,Fun,Dsc}|T], [Pth,Ath,Mod,Pfx]=E, Acc)
-  when is_atom(Fun) ->
-    {ok, Prn} = uri_pattern(Mtd, Pfx, Pth),
-    Route = #route{pattern=Prn,
-		   auth=Ath,
-		   path=Pth,
-		   method=Mtd,
-		   module=Mod,
-		   handler=Fun,
-		   description=Dsc},
-    build_catalog(T, E, [Route|Acc]);
-build_catalog([], _, Acc) ->
-    Acc.
-
-uri_pattern(Method, Prefix, UriPath) ->
-    Str = "^" ++ atom_to_list(Method) ++ ":" ++ Prefix ++
-	re:replace(UriPath, "{([a-z_]+)}",
-		   "(?<\\g{1}>[^/,? ]+)",
-		   [global, {return, list}]) ++ "$",
-    %% logger:debug("pattern:~p", [Str]),
-    re:compile(Str).
 
 %%--------------------------------------------------------------------
-%% @doc URI Path로 라우팅할 Handler를 검색한다.
-%% @spec (Sbj, RegExPatterns) -> Handler | undefined.
-%% Sbj = string()
-%% RegExPatterns = List
-%% @end
+%% Internal Functions
 %%--------------------------------------------------------------------
-find_handler(_, []) ->
-    undefined;
-find_handler(Sbj, [R=#route{pattern=Pt}|T]) ->
-    case re:run(Sbj, Pt, [{capture, all_names, binary}]) of
-	{match, L} ->
-	    {namelist, N} = re:inspect(Pt, namelist),
-	    %% Path Parameter : /path/to/user/{user_id}
-	    %% user_id=Value
-	    NameMap = [{binary_to_list(Name), binary_to_list(Value)}
-		       || {Name, Value} <- lists:zip(N, L)],
-	    {R#route.auth, R#route.module, R#route.handler, NameMap};
-	match ->
-	    {R#route.auth, R#route.module, R#route.handler, []};
-	nomatch ->
-	    find_handler(Sbj, T)
-    end.
 
 %%--------------------------------------------------------------------
 %% @doc
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-check_auth([], _) ->
+check_auth(undefined, _) ->
     [{auth_type, guest}];
-check_auth([guest], _) ->
+check_auth(<<"guest">>, _) ->
     [{auth_type, guest}];
-check_auth(_Ath, Header) ->
-    {_Type, Config} = get_authinfo(),
-    Key = ?prop(key, Config),
+check_auth(<<"membership">>, Header) ->
+    Info = get_authinfo(),
+    Key = proplists:get_value(<<"key">>, Info),
     case misclib:token_decode(Header, Key) of
 	{error, Reason} ->
 	    {unauthorized, Reason};
 	Value ->
+	    logger:debug("checkauth:~p", [Value]),
 	    Value
-    end.
+    end;
+check_auth(Access, _) ->
+    logger:error("binary no matching:~p", [Access]),
+    {unauthorized, invalid_access_setting}.
+
+
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+make_pattern([H|T], Prefix, Acc) ->
+    Access = proplists:get_value(<<"access">>, H),
+    Module = proplists:get_value(<<"module">>, H),
+    Method = proplists:get_value(<<"method">>, H),
+    Path = proplists:get_value(<<"path">>, H),
+    Func = proplists:get_value(<<"func">>, H),
+    PathRe = re:replace(Path, "{([a-z_]+)}", "(?<\\g{1}>[^/,? ]+)", [global, {return, list}]),
+    Chrs = io_lib:format("^~s:~s~s$", [Method, Prefix, PathRe]),
+    {ok, Pattern} = re:compile(Chrs),
+    Route = #route{pattern=Pattern,
+		   method=Method,
+		   module=Module,
+		   func=Func,
+		   access=Access},
+    make_pattern(T, Prefix, [Route|Acc]);
+make_pattern([], _, Acc) ->
+    Acc.
+
+%%--------------------------------------------------------------------
+%% @doc
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+find_route([Route=#route{pattern=Pattern}|T], Subject) ->
+    case re:run(Subject, Pattern, [{capture, all_names, binary}]) of
+	{match, Captured} ->
+	    {namelist, Names} = re:inspect(Pattern, namelist),
+	    PathParams = lists:zip(Names, Captured),
+	    {Route, PathParams};
+	match ->
+	    {Route, []};
+	_ ->
+	    %% nomatch | {error, Type}
+	    find_route(T, Subject)
+    end;
+find_route([], _) ->
+    nomatch.
+
+%%--------------------------------------------------------------------
+%% @doc
+%%
+%% @spec
+%% @end
+%%--------------------------------------------------------------------
+flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) >= Nth ->
+    Next = lists:nth(Nth, Paths),
+    NewCols = lists:append([Cols, proplists:delete(Next, H)]),
+    NextGen = proplists:get_value(Next, H),
+    flatten(Nth, Paths, T, Cols, flatten(Nth+1, Paths, NextGen, NewCols, Rcds));
+flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) < Nth ->
+    NewCols = lists:append([Cols, H]),
+    %% 마지막 T 노드 처리
+    flatten(Nth, Paths, T, Cols, [NewCols|Rcds]);
+flatten(_, _, [], _, Rcds) ->
+    Rcds.

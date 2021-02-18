@@ -7,12 +7,12 @@ OBJECTS=$(SOURCES:src/%.erl=ebin/%.beam)
 all: $(OBJECTS) test
 
 ebin/%.beam: src/%.erl
-	erlc $(ERLC_FLAGS) -o ebin/ -I include $<
+	erlc $(ERLC_FLAGS) -smp -v -o ebin/ -I include $<
 clean:
 	-rm -f ebin/*.beam
 
 test:
-	-../apistart.sh start
+	-../apisrv.sh start
 	erl $(ERLC_FLAGS) -noshell -pa ebin \
 	-eval 'eunit:test("ebin",[verbose])' \
 	-s init stop
