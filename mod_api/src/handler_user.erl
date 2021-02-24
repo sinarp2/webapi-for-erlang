@@ -23,16 +23,16 @@ userinfo(Model) ->
 
     Res = es:search_by_id(<<"users">>, <<"_doc">>, UserId),
     logger:debug("result:~p", [Res]),
-    Found = proplists:get_value(<<"found">>, Res),
+    Found = maps:is_key(<<"found">>, Res),
     if Found == false ->
 	    Model(put, {result, fail}),
 	    Model(put, {reason, user_not_found});
        true ->
-	    Source = proplists:get_value(<<"_source">>, Res),
+	    Source = maps:get(<<"_source">>, Res),
 	    Model(put, {result, success}),
 	    Model(put, {source, Source}),
-	    Model(put, {username, proplists:get_value(<<"display_name">>, Source)}),
-	    Model(put, {lastname, proplists:get_value(<<"email">>, Source)})
+	    Model(put, {username, maps:get(<<"display_name">>, Source)}),
+	    Model(put, {lastname, maps:get(<<"email">>, Source)})
     end.
 
 userlist(Model) ->
@@ -42,14 +42,13 @@ userlist(Model) ->
     Size = Model(param, [<<"_size">>, int, 5]),
     From = Model(param, [<<"_page">>, int, 0]),
 
-    Query = [{fields, [<<"first_name">>,
-		       <<"last_name">>,
-		       <<"email">>]},
-	     {<<"_source">>, false},
-	     {query,
-	      [{match_all, [{}]}]},
-	     {size, Size},
-	     {from, From}],
+    Query = #{fields => [<<"first_name">>,
+			 <<"last_name">>,
+			 <<"email">>],
+	      <<"_source">> => false,
+	      query => #{ match_all => #{}},
+	      size => Size,
+	      from => From},
 
     Hits = es:search(<<"users">>, Query),
     %% es에서는 json 문자열로 리턴됨 "{\"took\":1,\"timed_out\":false

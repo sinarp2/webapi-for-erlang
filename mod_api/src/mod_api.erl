@@ -39,15 +39,13 @@ request_parameter(Method, UriMap, _, _)
 %% application/json content type -> request body data
 request_parameter(_, _, CType, Body)
   when CType =:= ?APPLICATION_JSON ->
-    BodyList =
-	case length(Body) of
-	    0 ->
-		[];
-	    _ ->
-		misclib:json_to_terms(Body)
-	end,
-    [{binary_to_list(Name), Value} ||
-	{Name, Value} <- BodyList];
+    case length(Body) of
+	0 ->
+	    [];
+	_ ->
+	    {Terms} = misclib:json_to_terms(Body),
+	    Terms
+    end;
 request_parameter(_, _, CType, Body) ->
     {IsMultipart, Boundary} = misclib:is_multipart(CType),
     if IsMultipart =:= true ->
@@ -158,9 +156,11 @@ response(HttpCode, Output) ->
 		 {raw, Payload} ->
 		     lists:flatten(io_lib:format("~p", [Payload]));
 		 {json, Payload} ->
-		     misclib:terms_to_json(Payload);
+		     JiffyObj = {Payload},
+		     misclib:terms_to_json(JiffyObj);
 		 Payload ->
-		     misclib:terms_to_json(Payload)
+		     JiffyObj = {Payload},
+		     misclib:terms_to_json(JiffyObj)
 	     end,
     Hd = [{code, HttpCode},
 	  {content_type, "application/json"},

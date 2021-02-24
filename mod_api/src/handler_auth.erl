@@ -20,9 +20,9 @@ signup(Model) ->
 	    ok
     end,
 
-    Query = [{query,
-	      [{term,
-		[{<<"email.keyword">>, Email}]}]}],
+    Query = #{query =>
+		  #{term =>
+			#{<<"email.keyword">> => Email}}},
 
     Hits = es:search(<<"users">>, Query),
     if
@@ -39,15 +39,15 @@ signup(Model) ->
     %% binary() -> binary를 그대로 문자화 -> 문자화된 것을 다시 바이너리로
     Hash = crypto:hash(md5, Password),
     HashStr = list_to_binary(io_lib:format("~p", [Hash])),
-    Doc = [{display_name, DisplayName},
-	   {email, Email},
-	   {password, HashStr}],
+    Doc = #{display_name => DisplayName,
+	    email => Email,
+	    password => HashStr},
 
     case es:insert(<<"users">>, <<"_doc">>, Doc) of
 	{fail, Reason} ->
 	    throw({401, Reason});
 	Res ->
-	    Id = proplists:get_value(<<"_id">>, Res),
+	    Id = maps:get(<<"_id">>, Res),
 	    case issue_token(Model, Id, Email, DisplayName) of
 		ok ->
 		    ok;
@@ -74,20 +74,19 @@ login(Model) ->
 	    ok
     end,
 
-    Query = [{size, 5},
-	     {from, 0},
-	     {<<"_source">>, false},
-	     {fields, [<<"display_name">>,
-		       <<"password">>,
-		       <<"email">>]},
-	     {query, [{bool,
-		       [{must,
-			 [{term,
-			   [{'email.keyword', ParamEmail}]}]}]}]}],
+    Query = #{<<"_source">> => false,
+	      fields => [<<"display_name">>,
+                         <<"password">>,
+                         <<"email">>],
+	      query =>
+		  #{bool =>
+			#{must =>
+			      #{term =>
+				    #{'email.keyword' => ParamEmail}}}}},
 
     Hits = es:search(<<"users">>, Query),
     if
-	length(Hits) == 0 ->
+	length(Hits) =:= 0 ->
 	    throw({401, user_not_found});
 	length(Hits) > 1 ->
 	    throw({401, multiple_users});
@@ -95,13 +94,14 @@ login(Model) ->
 	    ok
     end,
 
-    [UserData] = Hits,
-    Id = proplists:get_value(<<"_id">>, UserData),
-    FieldData = proplists:get_value(<<"fields">>, UserData),
-    TupleList = [{K, hd(V)} || {K, V} <- FieldData],
-    DisplayName = proplists:get_value(<<"display_name">>, TupleList),
-    StoredPassword = proplists:get_value(<<"password">>, TupleList),
-    Email = proplists:get_value(<<"email">>, TupleList),
+    UserData = hd(Hits),
+    Id = maps:get(<<"_id">>, UserData),
+    Fields = maps:get(<<"fields">>, UserData),
+    %% fields 옵션 사용 시 elasticsearch 결과가 List 형태로 리턴되기 때문에
+    %% 결과 값이 하나라는 가정하에 List를 벗겨낸다.
+    [DisplayName] = maps:get(<<"display_name">>, Fields),
+    [StoredPassword] = maps:get(<<"password">>, Fields),
+    [Email] = maps:get(<<"email">>, Fields),
 
     Password = Model(param, <<"password">>),
     Hash = crypto:hash(md5, Password),

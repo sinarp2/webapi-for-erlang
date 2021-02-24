@@ -22,9 +22,10 @@
 search(Index, Query) ->
     {ok, Body} = request_post([Index, <<"/_search">>], Query),
     %% es 결과 데이터에서 hits List를 추출
-    Edata = misclib:json_to_terms(Body),
+    Edata = misclib:json_to_maps(Body),
     try
-	proplists:get_value(<<"hits">>, proplists:get_value(<<"hits">>, Edata))
+	Hits = maps:get(<<"hits">>, Edata),
+	maps:get(<<"hits">>, Hits)
     catch
 	_:Reason:Stack ->
 	    logger:error("es result error:~p", [Edata]),
@@ -35,16 +36,16 @@ search(Index, Query) ->
 
 search_by_id(Index, Doc, Id) ->
     {ok, Body} = request_get([Index, <<"/">>, Doc, <<"/">>, Id]),
-    misclib:json_to_terms(Body).
+    misclib:json_to_maps(Body).
 
 insert(Index, Doc, Data) ->
     {ok, Res} = request_post([Index, <<"/">>, Doc], Data),
-    ResData = misclib:json_to_terms(Res),
-    case proplists:get_value(<<"error">>, ResData) of
-	undefined ->
+    ResData = misclib:json_to_maps(Res),
+    case maps:is_key(<<"error">>, ResData) of
+        false ->
 	    ResData;
-	Val ->
-	    {fail, Val}
+	true ->
+	    {fail, ResData}
     end.
 
 request_get(Uri) ->

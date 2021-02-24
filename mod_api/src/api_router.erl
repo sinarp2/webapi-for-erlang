@@ -64,9 +64,9 @@ start_link() ->
 init([]) ->
     {ok, Path} = application:get_env(routes),
     {ok, Json} = file:read_file(Path),
-    Terms = misclib:json_to_terms(Json),
+    {Terms} = jiffy:decode(Json),
 
-    AuthInfo = proplists:get_value(<<"authentication">>, Terms),
+    {AuthInfo} = proplists:get_value(<<"authentication">>, Terms),
     Prefix = proplists:get_value(<<"prefix">>, Terms),
     Routes = proplists:get_value(<<"routes">>, Terms),
     RouteList = flatten(1, [<<"paths">>, <<"methods">>], Routes, [], []),
@@ -166,12 +166,12 @@ find_route([], _) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) >= Nth ->
+flatten(Nth, Paths, [{H}|T], Cols, Rcds) when length(Paths) >= Nth ->
     Next = lists:nth(Nth, Paths),
     NewCols = lists:append([Cols, proplists:delete(Next, H)]),
     NextGen = proplists:get_value(Next, H),
     flatten(Nth, Paths, T, Cols, flatten(Nth+1, Paths, NextGen, NewCols, Rcds));
-flatten(Nth, Paths, [H|T], Cols, Rcds) when length(Paths) < Nth ->
+flatten(Nth, Paths, [{H}|T], Cols, Rcds) when length(Paths) < Nth ->
     NewCols = lists:append([Cols, H]),
     %% 마지막 T 노드 처리
     flatten(Nth, Paths, T, Cols, [NewCols|Rcds]);
