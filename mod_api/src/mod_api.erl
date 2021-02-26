@@ -55,56 +55,6 @@ request_parameter(_, _, CType, Body) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%% check "content-type" header for parsing paramters
-%%
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-%% check_content_type(Mod) ->
-%%     %% Axios Client 에서는 body행태가 아닌 param 형태의 URL이 사용되면
-%%     %% content-type이 강제로 재설정 되어 application/json content type을 지정할 수 없다.
-%%     %% GET 방식에서는 json 형태로 파라미터를 보낼 수 없으므로
-%%     %% content-type이 application/json이 아니게 된다.
-%%     case proplists:get_value("content-type", Mod#mod.parsed_header) of
-%% 	"application/json" ->
-%% 	    Method = Mod#mod.method,
-%% 	    Header = Mod#mod.parsed_header,
-%% 	    UriMap = uri_string:parse(Mod#mod.request_uri),
-%% 	    Params = parse_param(Method, UriMap,
-%% 				 Mod#mod.entity_body),
-%% 	    {HttpCode, Response} = route_to_handler(maps:get(path, UriMap),
-%% 						    Method, Header, Params),
-%% 	    response(HttpCode, Response);
-%% 	_ ->
-%% 	    logger:debug("error:~p", [Mod#mod.parsed_header]),
-%% 	    response(400, [{result, error},
-%% 			   {reason, <<"content-type not found">>}])
-%%     end.
-
-%%--------------------------------------------------------------------
-%% @doc
-%% @spec
-%% @end
-%%--------------------------------------------------------------------
-%% parse_param(Method, UriMap, _Body) when
-%%       Method =:= "GET";
-%%       Method =:= "DELETE"->
-%%     uri_string:dissect_query(maps:get(query, UriMap, ""));
-%% parse_param(_Method, _UriMap, Body) ->
-%%     %% application/json인 경우만 해당함.
-%%     logger:debug("post params:~p", [Body]),
-%%     BodyList =
-%% 	case length(Body) of
-%% 	    0 ->
-%% 		[];
-%% 	    _ ->
-%% 		misclib:json_to_terms(Body)
-%% 	end,
-%%     [{binary_to_list(Name), Value} ||
-%% 	{Name, Value} <- BodyList].
-
-%%--------------------------------------------------------------------
-%% @doc
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
